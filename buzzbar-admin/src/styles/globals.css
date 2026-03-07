@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Dark-only theme tokens (HSL) */
+  --background: 222 47% 7%;
+  --foreground: 210 40% 98%;
+
+  --card: 222 42% 10%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222 42% 10%;
+  --popover-foreground: 210 40% 98%;
+
+  --muted: 222 20% 14%;
+  --muted-foreground: 215 15% 70%;
+
+  --border: 222 18% 18%;
+  --input: 222 18% 18%;
+  --ring: 35 92% 55%;
+
+  /* Premium amber/copper accent */
+  --primary: 35 92% 55%;
+  --primary-foreground: 222 47% 7%;
+
+  --secondary: 222 24% 18%;
+  --secondary-foreground: 210 40% 98%;
+
+  --accent: 222 24% 18%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 74% 55%;
+  --destructive-foreground: 210 40% 98%;
+
+  --success: 142 72% 40%;
+  --success-foreground: 210 40% 98%;
+
+  --radius: 14px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+* {
+  @apply border-border;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.25);
+}
+
