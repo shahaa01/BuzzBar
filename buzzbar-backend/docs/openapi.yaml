@@ -1,0 +1,1159 @@
+openapi: 3.0.3
+info:
+  title: BuzzBar Backend API
+  version: "1.0.0"
+  description: |
+    Dev Phase 1 API (stable).
+
+    Stability guarantee:
+    - `/api/v1/**` is considered stable after Phase 1.
+    - Future changes must be additive only. Breaking changes require `/api/v2`.
+servers:
+  - url: http://localhost:3000
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Me
+  - name: Catalog
+  - name: Cart
+  - name: Promotions
+  - name: KYC
+  - name: Orders
+  - name: Payments
+  - name: AdminAuth
+  - name: AdminSettings
+  - name: AdminCatalog
+  - name: AdminUploads
+  - name: AdminInventory
+  - name: AdminKYC
+  - name: AdminOrders
+  - name: AdminPayments
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      responses:
+        "200":
+          description: Always OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  status: { type: string }
+                  requestId: { type: string }
+                  ts: { type: string }
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness check (Mongo required)
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Not ready
+
+  /api/v1/auth/signup:
+    post:
+      tags: [Auth]
+      summary: Signup (password)
+      description: |
+        Rate limited.
+        Errors: `EMAIL_TAKEN`, `AUTH_RATE_LIMITED`, `VALIDATION_ERROR`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthSignupRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "409":
+          description: Email taken
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (password)
+      description: |
+        Rate limited.
+        Errors: `INVALID_CREDENTIALS`, `AUTH_RATE_LIMITED`, `VALIDATION_ERROR`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthLoginRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/google:
+    post:
+      tags: [Auth]
+      summary: Login with Google (idToken)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+
+  /api/v1/auth/apple:
+    post:
+      tags: [Auth]
+      summary: Login with Apple (identityToken)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identityToken]
+              properties:
+                identityToken: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh user tokens
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout user (revoke sessions)
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+
+  /api/v1/me:
+    get:
+      tags: [Me]
+      summary: Get current user profile
+      security: [{ UserBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: "#/components/schemas/UserPublic" }
+        "401":
+          description: Unauthorized
+    put:
+      tags: [Me]
+      summary: Update current user profile
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/categories:
+    get:
+      tags: [Catalog]
+      summary: List active categories
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/brands:
+    get:
+      tags: [Catalog]
+      summary: List active brands
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/products:
+    get:
+      tags: [Catalog]
+      summary: List products (search/filter)
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: brand
+          schema: { type: string }
+        - in: query
+          name: minPrice
+          schema: { type: integer }
+        - in: query
+          name: maxPrice
+          schema: { type: integer }
+        - in: query
+          name: inStock
+          schema: { type: string, enum: ["true", "false"] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/products/{id}:
+    get:
+      tags: [Catalog]
+      summary: Product detail + variants availability
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+
+  /api/v1/cart:
+    get:
+      tags: [Cart]
+      summary: Get cart (deterministic totals)
+      security: [{ UserBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/cart/items:
+    post:
+      tags: [Cart]
+      summary: Add/increment cart item
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartAddItemRequest" }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/cart/items/{variantId}:
+    patch:
+      tags: [Cart]
+      summary: Set cart item qty (0 removes)
+      security: [{ UserBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: variantId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartUpdateItemRequest" }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Cart]
+      summary: Remove cart item
+      security: [{ UserBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: variantId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/cart/clear:
+    post:
+      tags: [Cart]
+      summary: Clear cart
+      security: [{ UserBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/promotions/validate:
+    post:
+      tags: [Promotions]
+      summary: Validate promo code against cart
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoValidateRequest" }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/kyc/submit:
+    post:
+      tags: [KYC]
+      summary: Submit KYC attempt (multipart)
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/KycSubmitRequest" }
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Validation/upload error
+        "501":
+          description: Cloudinary not configured
+
+  /api/v1/kyc/status:
+    get:
+      tags: [KYC]
+      summary: Get KYC status summary
+      security: [{ UserBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/orders:
+    post:
+      tags: [Orders]
+      summary: Create order from cart (reserves stock, snapshots pricing)
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "201":
+          description: Created
+    get:
+      tags: [Orders]
+      summary: List customer orders
+      security: [{ UserBearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Order detail
+      security: [{ UserBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+
+  /api/v1/payments/init:
+    post:
+      tags: [Payments]
+      summary: Initialize wallet payment (MOCK only in P1.7a)
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentInitRequest" }
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: Not applicable / terminal
+
+  /api/v1/payments/confirm:
+    post:
+      tags: [Payments]
+      summary: Confirm wallet payment (MOCK only in P1.7a)
+      security: [{ UserBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentConfirmRequest" }
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+
+  /api/v1/admin/auth/login:
+    post:
+      tags: [AdminAuth]
+      summary: Admin login
+      description: |
+        Rate limited.
+        Errors: `ADMIN_INVALID_CREDENTIALS`, `ADMIN_AUTH_RATE_LIMITED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminLoginRequest" }
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Rate limited
+
+  /api/v1/admin/auth/refresh:
+    post:
+      tags: [AdminAuth]
+      summary: Admin token refresh
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+
+  /api/v1/admin/auth/logout:
+    post:
+      tags: [AdminAuth]
+      summary: Admin logout
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/settings:
+    get:
+      tags: [AdminSettings]
+      summary: Get settings
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/categories:
+    post:
+      tags: [AdminCatalog]
+      summary: Create category
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                sortOrder: { type: integer }
+                isActive: { type: boolean }
+      responses:
+        "201":
+          description: Created
+
+  /api/v1/admin/categories/{id}:
+    put:
+      tags: [AdminCatalog]
+      summary: Update category
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                sortOrder: { type: integer }
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [AdminCatalog]
+      summary: Soft-delete category (sets isActive=false)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/brands:
+    post:
+      tags: [AdminCatalog]
+      summary: Create brand
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                logo: { type: object, additionalProperties: true }
+                isActive: { type: boolean }
+      responses:
+        "201":
+          description: Created
+
+  /api/v1/admin/brands/{id}:
+    put:
+      tags: [AdminCatalog]
+      summary: Update brand
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                logo: { type: object, nullable: true, additionalProperties: true }
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [AdminCatalog]
+      summary: Soft-delete brand (sets isActive=false)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/products:
+    post:
+      tags: [AdminCatalog]
+      summary: Create product
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, brandId, categoryId]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                brandId: { type: string }
+                categoryId: { type: string }
+                description: { type: string }
+                abv: { type: number }
+                images: { type: array, items: { type: object, additionalProperties: true } }
+                isActive: { type: boolean }
+      responses:
+        "201":
+          description: Created
+
+  /api/v1/admin/products/{id}:
+    put:
+      tags: [AdminCatalog]
+      summary: Update product
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                brandId: { type: string }
+                categoryId: { type: string }
+                description: { type: string }
+                abv: { type: number, nullable: true }
+                images: { type: array, items: { type: object, additionalProperties: true } }
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [AdminCatalog]
+      summary: Soft-delete product (sets isActive=false)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/products/{id}/variants:
+    post:
+      tags: [AdminCatalog]
+      summary: Create variant under product
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku, volumeMl, packSize, price]
+              properties:
+                sku: { type: string }
+                volumeMl: { type: integer }
+                packSize: { type: integer }
+                price: { type: integer }
+                mrp: { type: integer }
+                isActive: { type: boolean }
+      responses:
+        "201":
+          description: Created
+
+  /api/v1/admin/variants/{variantId}:
+    put:
+      tags: [AdminCatalog]
+      summary: Update variant
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: variantId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sku: { type: string }
+                volumeMl: { type: integer }
+                packSize: { type: integer }
+                price: { type: integer }
+                mrp: { type: integer, nullable: true }
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [AdminCatalog]
+      summary: Soft-delete variant (sets isActive=false)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: variantId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [AdminSettings]
+      summary: Update settings (superadmin only)
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminSettingsUpdateRequest" }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/uploads/image:
+    post:
+      tags: [AdminUploads]
+      summary: Upload an image to Cloudinary (admin)
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                target:
+                  type: string
+                  enum: [categories, brands, products]
+                targetId:
+                  type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Upload error
+
+  /api/v1/admin/uploads/destroy:
+    post:
+      tags: [AdminUploads]
+      summary: Destroy a Cloudinary image by publicId
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/inventory/adjust:
+    patch:
+      tags: [AdminInventory]
+      summary: Adjust inventory quantity (admin/employee)
+      security: [{ AdminBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variantId, delta]
+              properties:
+                variantId: { type: string }
+                delta: { type: integer }
+                reason: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/inventory:
+    get:
+      tags: [AdminInventory]
+      summary: List inventory (admin/employee)
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/kyc/queue:
+    get:
+      tags: [AdminKYC]
+      summary: KYC review queue
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/kyc/{userId}:
+    get:
+      tags: [AdminKYC]
+      summary: View user KYC (signed image URLs)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/kyc/{userId}/approve:
+    post:
+      tags: [AdminKYC]
+      summary: Approve user KYC
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/kyc/{userId}/reject:
+    post:
+      tags: [AdminKYC]
+      summary: Reject user KYC
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/orders:
+    get:
+      tags: [AdminOrders]
+      summary: List orders (admin/employee)
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/orders/{id}/status:
+    patch:
+      tags: [AdminOrders]
+      summary: Update order status (guarded transitions)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/orders/{id}/assign:
+    patch:
+      tags: [AdminOrders]
+      summary: Assign order to admin/employee
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assignedToAdminId]
+              properties:
+                assignedToAdminId: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/orders/{id}/cancel:
+    post:
+      tags: [AdminOrders]
+      summary: Cancel order (releases reserved stock)
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/payments:
+    get:
+      tags: [AdminPayments]
+      summary: List payment transactions
+      security: [{ AdminBearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /api/v1/admin/payments/{id}:
+    get:
+      tags: [AdminPayments]
+      summary: Get payment transaction
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+components:
+  securitySchemes:
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+        errorCode: { type: string }
+        details: { nullable: true }
+        requestId: { type: string }
+
+    UserPublic:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        phone: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        photoUrl: { type: string, nullable: true }
+        kycStatus: { type: string, enum: [not_started, pending, verified, rejected] }
+
+    AuthSignupRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        name: { type: string }
+
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AuthResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            token: { type: string }
+            refreshToken: { type: string }
+            user: { $ref: "#/components/schemas/UserPublic" }
+
+    MeUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        photoUrl: { type: string }
+
+    CartAddItemRequest:
+      type: object
+      required: [variantId, qty]
+      properties:
+        variantId: { type: string }
+        qty: { type: integer, minimum: 1 }
+
+    CartUpdateItemRequest:
+      type: object
+      required: [qty]
+      properties:
+        qty: { type: integer, minimum: 0 }
+
+    PromoValidateRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string }
+
+    KycSubmitRequest:
+      type: object
+      required: [idFront]
+      properties:
+        idFront:
+          type: string
+          format: binary
+        idBack:
+          type: string
+          format: binary
+        selfie:
+          type: string
+          format: binary
+        clientOcrText: { type: string }
+        clientDobRaw: { type: string }
+        clientConfidence: { type: number }
+
+    OrderCreateRequest:
+      type: object
+      required: [paymentMethod, address]
+      properties:
+        paymentMethod: { type: string, enum: [COD, WALLET] }
+        promoCode: { type: string }
+        address:
+          type: object
+          required: [fullAddress, area]
+          properties:
+            label: { type: string }
+            fullAddress: { type: string }
+            area: { type: string }
+            landmark: { type: string }
+            lat: { type: number }
+            lng: { type: number }
+            contactName: { type: string }
+            contactPhone: { type: string }
+
+    PaymentInitRequest:
+      type: object
+      required: [orderId, provider]
+      properties:
+        orderId: { type: string }
+        provider: { type: string, example: MOCK }
+
+    PaymentConfirmRequest:
+      type: object
+      required: [orderId, provider]
+      properties:
+        orderId: { type: string }
+        provider: { type: string, example: MOCK }
+        payload: { nullable: true }
+
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AdminSettingsUpdateRequest:
+      type: object
+      properties:
+        nightHours:
+          type: object
+          properties:
+            start: { type: string, example: "22:00" }
+            end: { type: string, example: "06:00" }
+            timezone: { type: string, example: "Asia/Kathmandu" }
+        serviceAreas:
+          type: array
+          items: { type: string }
+        deliveryFeeFlat: { type: integer }
+        legalAgeMin: { type: integer }
