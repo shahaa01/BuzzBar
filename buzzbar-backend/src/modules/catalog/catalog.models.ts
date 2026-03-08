@@ -15,6 +15,7 @@ const categorySchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    image: { type: cloudinaryAssetSchema },
     sortOrder: { type: Number, required: true, default: 0 },
     isActive: { type: Boolean, required: true, default: true }
   },
@@ -42,6 +43,15 @@ const productSchema = new Schema(
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true, index: true },
+    countryOfOrigin: { type: String, trim: true },
+    productType: { type: String, trim: true },
+    subcategory: { type: String, trim: true },
+    ingredients: { type: [String], default: () => [] },
+    servingSuggestion: { type: String, trim: true },
+    agingInfo: { type: String, trim: true },
+    authenticityNote: { type: String, trim: true },
+    shortDescription: { type: String, trim: true },
+    tags: { type: [String], default: () => [] },
     description: { type: String, trim: true },
     abv: { type: Number, min: 0, max: 100 },
     images: { type: [cloudinaryAssetSchema], default: () => [] },
@@ -50,7 +60,15 @@ const productSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 
-productSchema.index({ name: 'text', description: 'text' });
+productSchema.index({
+  name: 'text',
+  description: 'text',
+  shortDescription: 'text',
+  countryOfOrigin: 'text',
+  productType: 'text',
+  subcategory: 'text',
+  tags: 'text'
+});
 productSchema.index({ isActive: 1, brandId: 1, categoryId: 1, createdAt: -1 });
 
 export const ProductModel =
@@ -60,6 +78,7 @@ const variantSchema = new Schema(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
     sku: { type: String, required: true, unique: true, trim: true },
+    label: { type: String, trim: true },
     volumeMl: { type: Number, required: true, min: 1 },
     packSize: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 }, // NPR integer

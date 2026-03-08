@@ -1,14 +1,16 @@
 import { Navigate } from 'react-router-dom';
-import { useAuthStore } from '../features/auth/auth.store.js';
 import type { Capability } from '../lib/permissions/capabilities.js';
-import { canRole } from '../lib/permissions/capabilities.js';
+import { useCapabilities } from '../lib/permissions/useCapabilities.js';
 import type React from 'react';
 
-export function RequireCapability(props: { capability: Capability; children: React.ReactNode }) {
-  const claims = useAuthStore((s) => s.claims);
-  const role = claims?.role;
+type Props =
+  | { capability: Capability; children: React.ReactNode }
+  | { anyOf: Capability[]; children: React.ReactNode };
 
+export function RequireCapability(props: Props) {
+  const { role, canAny } = useCapabilities();
   if (!role) return <Navigate to="/login" replace />;
-  if (!canRole(role, props.capability)) return <Navigate to="/unauthorized" replace />;
+  const caps = 'capability' in props ? [props.capability] : props.anyOf;
+  if (!canAny(caps)) return <Navigate to="/unauthorized" replace />;
   return <>{props.children}</>;
 }

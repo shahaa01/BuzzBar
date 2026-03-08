@@ -10,6 +10,11 @@ import { signAdminAccessToken, signAdminRefreshToken, verifyAdminRefreshToken } 
 import { verifyPassword } from './admin.password.js';
 import type { AdminPublic } from './admin.types.js';
 import { randomUUID } from 'node:crypto';
+import { todayRangeUtc } from '../../common/utils/timezone.js';
+import { OrderModel } from '../orders/orders.models.js';
+import { KycAttemptModel } from '../kyc/kyc.models.js';
+import { InventoryStockModel } from '../inventory/inventory.models.js';
+import { PromotionModel } from '../promotions/promotions.models.js';
 
 function toAdminPublic(doc: any): AdminPublic {
   return {
@@ -212,6 +217,100 @@ export function adminRouter() {
   );
 
   // ---- Settings
+  router.get(
+    '/dashboard/summary',
+    authenticateAdmin,
+    requireAdminRole(['superadmin', 'admin']),
+    asyncHandler(async (req, res) => {
+      const query = z
+        .object({
+          lowStockThreshold: z.coerce.number().int().min(0).default(5)
+        })
+        .parse(req.query ?? {});
+
+      const settings = await ensureSettings();
+      const timeZone = String((settings as any)?.nightHours?.timezone ?? 'Asia/Kathmandu');
+
+      const now = new Date();
+      const { start, end } = todayRangeUtc({ now, timeZone });
+
+      const orderStatuses = [
+        'CREATED',
+        'KYC_PENDING_REVIEW',
+        'CONFIRMED',
+        'PACKING',
+        'READY_FOR_DISPATCH',
+        'OUT_FOR_DELIVERY',
+        'DELIVERED',
+        'CANCELLED'
+      ] as const;
+
+      const [ordersToday, ordersPendingReview, ordersTodayByStatusAgg, ordersBacklogByStatusAgg] = await Promise.all([
+        OrderModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+        OrderModel.countDocuments({ status: 'KYC_PENDING_REVIEW' }),
+        OrderModel.aggregate([
+          { $match: { createdAt: { $gte: start, $lt: end } } },
+          { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]),
+        OrderModel.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }])
+      ]);
+
+      const ordersTodayByStatus: Record<string, number> = Object.fromEntries(orderStatuses.map((s) => [s, 0]));
+      for (const row of ordersTodayByStatusAgg as any[]) {
+        if (row?._id && typeof row.count === 'number') ordersTodayByStatus[String(row._id)] = row.count;
+      }
+
+      const ordersBacklogByStatus: Record<string, number> = Object.fromEntries(orderStatuses.map((s) => [s, 0]));
+      for (const row of ordersBacklogByStatusAgg as any[]) {
+        if (row?._id && typeof row.count === 'number') ordersBacklogByStatus[String(row._id)] = row.count;
+      }
+
+      const kycPendingFilter: any = { status: 'pending', supersededAt: { $exists: false } };
+      const [kycPending, oldestPendingAttempt] = await Promise.all([
+        KycAttemptModel.countDocuments(kycPendingFilter),
+        KycAttemptModel.findOne(kycPendingFilter).sort({ submittedAt: 1 }).select({ submittedAt: 1 }).lean()
+      ]);
+
+      const oldestSubmittedAt = (oldestPendingAttempt as any)?.submittedAt ? new Date((oldestPendingAttempt as any).submittedAt) : null;
+      const waitMinutes = oldestSubmittedAt ? Math.max(0, Math.floor((now.getTime() - oldestSubmittedAt.getTime()) / 60_000)) : undefined;
+
+      const [promotionsActive, inventoryLowStock, inventoryZeroStock, walletPending] = await Promise.all([
+        PromotionModel.countDocuments({ isActive: true, startAt: { $lte: now }, endAt: { $gte: now } }),
+        InventoryStockModel.countDocuments({ quantity: { $lte: query.lowStockThreshold } }),
+        InventoryStockModel.countDocuments({ quantity: { $lte: 0 } }),
+        OrderModel.countDocuments({ paymentMethod: 'WALLET', paymentStatus: 'PENDING' })
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          generatedAt: new Date().toISOString(),
+          timeZone,
+          counts: {
+            ordersToday,
+            ordersPendingReview,
+            kycPending,
+            promotionsActive,
+            inventoryLowStock,
+            inventoryZeroStock,
+            walletPending
+          },
+          statusBreakdown: {
+            ordersTodayByStatus,
+            ordersBacklogByStatus
+          },
+          kycOldestPending: {
+            submittedAt: oldestSubmittedAt ? oldestSubmittedAt.toISOString() : undefined,
+            waitMinutes
+          },
+          inventory: {
+            lowStockThreshold: query.lowStockThreshold
+          }
+        }
+      });
+    })
+  );
+
   router.get(
     '/settings',
     authenticateAdmin,

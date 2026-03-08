@@ -18,6 +18,7 @@ import { kycRouter } from './modules/kyc/kyc.router.js';
 import { kycAdminRouter } from './modules/kyc/kyc.admin.router.js';
 import { cartRouter } from './modules/cart/cart.router.js';
 import { promotionsRouter } from './modules/promotions/promotions.router.js';
+import { promotionsAdminRouter } from './modules/promotions/promotions.admin.router.js';
 import { ordersRouter } from './modules/orders/orders.router.js';
 import { ordersAdminRouter } from './modules/orders/orders.admin.router.js';
 import { paymentsRouter } from './modules/payments/payments.router.js';
@@ -107,6 +108,7 @@ export function createApp() {
   app.use('/api/v1/admin', kycAdminRouter());
   app.use('/api/v1/admin', ordersAdminRouter());
   app.use('/api/v1/admin', paymentsAdminRouter());
+  app.use('/api/v1/admin', promotionsAdminRouter());
   app.use('/api/v1/auth', authRouter());
   app.use('/api/v1/me', meRouter());
   app.use('/api/v1/kyc', kycRouter());

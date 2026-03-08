@@ -1,13 +1,16 @@
 import { NavLink } from 'react-router-dom';
-import { useAuthStore } from '../features/auth/auth.store.js';
-import { canRole } from '../lib/permissions/capabilities.js';
 import { NAV_ITEMS } from './nav.js';
 import { cn } from '../lib/utils/cn.js';
+import { useCapabilities } from '../lib/permissions/useCapabilities.js';
 
 export function Sidebar() {
-  const role = useAuthStore((s) => s.claims?.role);
+  const { can } = useCapabilities();
 
-  const items = NAV_ITEMS.filter((it) => (role ? canRole(role, it.capability) : false));
+  const items = NAV_ITEMS.filter((item) => {
+    if (!can(item.capability)) return false;
+    if (item.to === '/catalog/products' && can('catalog')) return false;
+    return true;
+  });
 
   return (
     <aside className="sticky top-0 flex h-screen flex-col gap-4 border-r bg-card/40 p-4">
@@ -40,4 +43,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

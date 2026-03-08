@@ -35,14 +35,48 @@ export function kycAdminRouter() {
       const query = z
         .object({
           status: z.enum(['pending', 'verified', 'rejected']).default('pending'),
+          sort: z.enum(['newest', 'oldest']).default('newest'),
+          autoDecision: z.enum(['auto_verified', 'needs_review']).optional(),
+          reasonToken: z.string().min(1).max(100).optional(),
+          minClientConfidence: z.coerce.number().min(0).max(1).optional(),
+          minServerConfidence: z.coerce.number().min(0).max(1).optional(),
+          submittedFrom: z.string().optional(),
+          submittedTo: z.string().optional(),
           page: z.coerce.number().int().positive().default(1),
           limit: z.coerce.number().int().positive().max(100).default(20)
         })
         .parse(req.query ?? {});
 
+      const limitAllowed = new Set([20, 50, 100]);
+      if (!limitAllowed.has(query.limit)) {
+        throw new ApiError(400, 'Invalid limit', { errorCode: 'INVALID_LIMIT', details: { allowed: [...limitAllowed] } });
+      }
+
       const skip = (query.page - 1) * query.limit;
       const filter: any = { status: query.status };
       if (query.status === 'pending') filter.supersededAt = { $exists: false };
+
+      if (query.autoDecision) filter.autoDecision = query.autoDecision;
+      if (typeof query.minClientConfidence === 'number') filter.clientConfidence = { ...(filter.clientConfidence ?? {}), $gte: query.minClientConfidence };
+      if (typeof query.minServerConfidence === 'number') filter.serverConfidence = { ...(filter.serverConfidence ?? {}), $gte: query.minServerConfidence };
+
+      const submittedFromDate = query.submittedFrom ? new Date(query.submittedFrom) : null;
+      const submittedToDate = query.submittedTo ? new Date(query.submittedTo) : null;
+      if (query.submittedFrom && Number.isNaN(submittedFromDate!.getTime())) throw new ApiError(400, 'Invalid submittedFrom', { errorCode: 'INVALID_DATE' });
+      if (query.submittedTo && Number.isNaN(submittedToDate!.getTime())) throw new ApiError(400, 'Invalid submittedTo', { errorCode: 'INVALID_DATE' });
+      if (submittedFromDate || submittedToDate) {
+        filter.submittedAt = {};
+        if (submittedFromDate) filter.submittedAt.$gte = submittedFromDate;
+        if (submittedToDate) filter.submittedAt.$lt = submittedToDate;
+      }
+
+      if (query.reasonToken) {
+        const token = query.reasonToken.trim();
+        const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filter.autoDecisionReason = { $regex: new RegExp(`(^|\\|)${escaped}(\\||$)`) };
+      }
+
+      const sort = query.sort === 'oldest' ? ({ submittedAt: 1 } as const) : ({ submittedAt: -1 } as const);
 
       const [items, total] = await Promise.all([
         KycAttemptModel.find(filter)
@@ -53,10 +87,11 @@ export function kycAdminRouter() {
             clientOcrText: 0,
             serverOcrText: 0
           })
-          .sort({ submittedAt: -1 })
+          .sort(sort)
           .skip(skip)
           .limit(query.limit)
           .populate('userId', { email: 1, phone: 1, name: 1, kycStatus: 1 })
+          .populate('reviewedByAdminId', { email: 1, role: 1 })
           .lean(),
         KycAttemptModel.countDocuments(filter)
       ]);
@@ -96,7 +131,10 @@ export function kycAdminRouter() {
         .exec();
       if (!user) throw new ApiError(404, 'User not found', { errorCode: 'NOT_FOUND' });
 
-      const attemptDoc = await KycAttemptModel.findOne({ userId: user._id }).sort({ submittedAt: -1 }).exec();
+      const attemptId = user.kycLastAttemptId?.toString?.();
+      const attemptDoc = attemptId
+        ? await KycAttemptModel.findById(attemptId).populate('reviewedByAdminId', { email: 1, role: 1 }).exec()
+        : null;
       const attempt = attemptDoc ? (attemptDoc.toObject() as any) : null;
       if (attempt) {
         attempt.idFront = signKycUrl(attempt.idFront);
@@ -104,9 +142,33 @@ export function kycAdminRouter() {
         attempt.selfie = signKycUrl(attempt.selfie);
       }
 
+      const attemptHistory = await KycAttemptModel.find({ userId: user._id })
+        .select({
+          idFront: 0,
+          idBack: 0,
+          selfie: 0,
+          clientOcrText: 0,
+          serverOcrText: 0,
+          clientDobRaw: 0,
+          serverDobRaw: 0,
+          clientDobAD: 0,
+          serverDobAD: 0,
+          clientDobBS: 0,
+          serverDobBS: 0,
+          clientDobSource: 0,
+          serverDobSource: 0,
+          clientParseErrors: 0,
+          serverParseErrors: 0,
+          parseErrors: 0
+        })
+        .sort({ submittedAt: -1 })
+        .limit(5)
+        .populate('reviewedByAdminId', { email: 1, role: 1 })
+        .lean();
+
       res.status(200).json({
         success: true,
-        data: { user, attempt }
+        data: { user, attempt, attemptHistory }
       });
     })
   );

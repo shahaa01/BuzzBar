@@ -3,6 +3,8 @@ import mongoose, { Schema } from 'mongoose';
 const promotionSchema = new Schema(
   {
     code: { type: String, required: true, unique: true, index: true }, // stored uppercase
+    title: { type: String, trim: true, maxlength: 140 },
+    description: { type: String, trim: true, maxlength: 2000 },
     type: { type: String, required: true, enum: ['PERCENT', 'FLAT'] },
     value: { type: Number, required: true, min: 0 },
     startAt: { type: Date, required: true },
@@ -39,4 +41,3 @@ promoUsageSchema.index({ promoId: 1, userId: 1 }, { unique: true });
 
 export const PromoUsageModel =
   mongoose.models.PromoUsage ?? mongoose.model('PromoUsage', promoUsageSchema);
-

@@ -35,6 +35,7 @@ const orderItemSchema = new Schema(
     variantId: { type: Schema.Types.ObjectId, ref: 'Variant', required: true },
     productName: { type: String, required: true },
     brandName: { type: String },
+    sku: { type: String },
     volumeMl: { type: Number, required: true },
     packSize: { type: Number, required: true },
     imageUrl: { type: String },
@@ -124,3 +125,28 @@ const orderCounterSchema = new Schema(
 export const OrderCounterModel =
   mongoose.models.OrderCounter ?? mongoose.model('OrderCounter', orderCounterSchema);
 
+const orderOperationAuditSchema = new Schema(
+  {
+    orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
+    type: { type: String, required: true, enum: ['STATUS_TRANSITION', 'ASSIGNMENT'], index: true },
+    actionId: { type: String, required: true, index: true },
+    actorAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser', required: true, index: true },
+    fromStatus: {
+      type: String,
+      enum: ['CREATED', 'KYC_PENDING_REVIEW', 'CONFIRMED', 'PACKING', 'READY_FOR_DISPATCH', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
+    },
+    toStatus: {
+      type: String,
+      enum: ['CREATED', 'KYC_PENDING_REVIEW', 'CONFIRMED', 'PACKING', 'READY_FOR_DISPATCH', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
+    },
+    previousAssignedToAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
+    assignedToAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
+    reason: { type: String }
+  },
+  { timestamps: { createdAt: true, updatedAt: false }, versionKey: false }
+);
+
+orderOperationAuditSchema.index({ orderId: 1, createdAt: -1 });
+
+export const OrderOperationAuditModel =
+  mongoose.models.OrderOperationAudit ?? mongoose.model('OrderOperationAudit', orderOperationAuditSchema);

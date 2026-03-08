@@ -14,6 +14,13 @@ describe('P1.7 payments (core + mock)', () => {
   let mongo: MongoMemoryServer;
   const app = createApp();
 
+  function formatHm(mins: number) {
+    const m = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.ADMIN_JWT_ACCESS_SECRET = 'test_admin_access_secret_1234567890';
@@ -24,9 +31,27 @@ describe('P1.7 payments (core + mock)', () => {
     mongo = await MongoMemoryServer.create();
     await connectMongo(mongo.getUri());
 
+    // Avoid time-dependent COD failures by configuring a 1-minute night window far in the future (Kathmandu time).
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kathmandu',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(now);
+    const m = parts.match(/^(\d{2}):(\d{2})$/);
+    const nowMin = m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+
     await SettingsModel.updateOne(
       { _id: SETTINGS_SINGLETON_ID },
-      { $set: { _id: SETTINGS_SINGLETON_ID, serviceAreas: ['Kathmandu', 'Lalitpur', 'Bhaktapur'], deliveryFeeFlat: 20 } },
+      {
+        $set: {
+          _id: SETTINGS_SINGLETON_ID,
+          nightHours: { start: formatHm(nowMin + 60), end: formatHm(nowMin + 61), timezone: 'Asia/Kathmandu' },
+          serviceAreas: ['Kathmandu', 'Lalitpur', 'Bhaktapur'],
+          deliveryFeeFlat: 20
+        }
+      },
       { upsert: true }
     );
   });
@@ -184,7 +209,9 @@ describe('P1.7 payments (core + mock)', () => {
   });
 
   it('guards: cannot init payment for COD order', async () => {
-    const { token, orderId } = await createOrder({ paymentMethod: 'COD', email: 'p6@buzzbar.com' });
+    // Create a wallet order (stable across night-hours), then flip to COD in DB to test the guard deterministically.
+    const { token, orderId } = await createOrder({ paymentMethod: 'WALLET', email: 'p6@buzzbar.com' });
+    await OrderModel.updateOne({ _id: orderId }, { $set: { paymentMethod: 'COD', paymentStatus: 'UNPAID' } });
     const init = await request(app).post('/api/v1/payments/init').set('Authorization', `Bearer ${token}`).send({ orderId, provider: 'MOCK' });
     expect(init.status).toBe(409);
     expect(init.body.errorCode).toBe('PAYMENT_INVALID_METHOD');
@@ -210,4 +237,3 @@ describe('P1.7 payments (core + mock)', () => {
     expect(init.body.errorCode).toBe('PAYMENT_PROVIDER_NOT_SUPPORTED');
   });
 });
-

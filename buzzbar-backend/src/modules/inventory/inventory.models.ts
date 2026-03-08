@@ -18,10 +18,16 @@ const inventoryMovementSchema = new Schema(
     type: { type: String, required: true, enum: ['RECEIVE', 'ADJUST', 'SALE', 'RETURN'] },
     delta: { type: Number, required: true },
     reason: { type: String },
+    quantityBefore: { type: Number },
+    quantityAfter: { type: Number },
     actorAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser', required: true, index: true }
   },
   { timestamps: { createdAt: true, updatedAt: false }, versionKey: false }
 );
+
+inventoryMovementSchema.index({ createdAt: -1 });
+inventoryMovementSchema.index({ variantId: 1, createdAt: -1 });
+inventoryMovementSchema.index({ actorAdminId: 1, createdAt: -1 });
 
 export const InventoryMovementModel =
   mongoose.models.InventoryMovement ?? mongoose.model('InventoryMovement', inventoryMovementSchema);

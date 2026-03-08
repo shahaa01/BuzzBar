@@ -1,25 +1,39 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout.js';
 import { AppShellLayout } from '../layouts/AppShellLayout.js';
-import { LoginPage } from '../features/auth/LoginPage.js';
 import { UnauthorizedPage } from '../routes/UnauthorizedPage.js';
 import { NotFoundPage } from '../routes/NotFoundPage.js';
-import { DashboardPage } from '../features/dashboard/DashboardPage.js';
-import { OrdersPage } from '../features/orders/OrdersPage.js';
-import { KycPage } from '../features/kyc/KycPage.js';
-import { InventoryPage } from '../features/inventory/InventoryPage.js';
-import { PaymentsPage } from '../features/payments/PaymentsPage.js';
-import { CatalogPage } from '../features/catalog/CatalogPage.js';
-import { SettingsPage } from '../features/settings/SettingsPage.js';
-import { PromotionsPage } from '../features/promotions/PromotionsPage.js';
 import { RequireAuth } from '../routes/RequireAuth.js';
 import { RequireCapability } from '../routes/RequireCapability.js';
+import { HomeRedirect } from '../routes/HomeRedirect.js';
+import { loadNamedPage } from './route-loader.js';
+import { RouteSuspense } from './route-suspense.js';
+
+const LoginPage = loadNamedPage(() => import('../features/auth/LoginPage.js'), 'LoginPage');
+const DashboardPage = loadNamedPage(() => import('../features/dashboard/DashboardPage.js'), 'DashboardPage');
+const OrdersPage = loadNamedPage(() => import('../features/orders/OrdersPage.js'), 'OrdersPage');
+const OrderDetailPage = loadNamedPage(() => import('../features/orders/OrderDetailPage.js'), 'OrderDetailPage');
+const KycPage = loadNamedPage(() => import('../features/kyc/KycPage.js'), 'KycPage');
+const KycReviewPage = loadNamedPage(() => import('../features/kyc/KycReviewPage.js'), 'KycReviewPage');
+const InventoryPage = loadNamedPage(() => import('../features/inventory/InventoryPage.js'), 'InventoryPage');
+const PaymentsPage = loadNamedPage(() => import('../features/payments/PaymentsPage.js'), 'PaymentsPage');
+const PaymentDetailPage = loadNamedPage(() => import('../features/payments/PaymentDetailPage.js'), 'PaymentDetailPage');
+const CatalogLayout = loadNamedPage(() => import('../features/catalog/CatalogLayout.js'), 'CatalogLayout');
+const CatalogProductsPage = loadNamedPage(() => import('../features/catalog/products/CatalogProductsPage.js'), 'CatalogProductsPage');
+const CatalogProductDetailPage = loadNamedPage(() => import('../features/catalog/products/CatalogProductDetailPage.js'), 'CatalogProductDetailPage');
+const CatalogProductNewPage = loadNamedPage(() => import('../features/catalog/products/CatalogProductNewPage.js'), 'CatalogProductNewPage');
+const CategoriesPage = loadNamedPage(() => import('../features/catalog/categories/CategoriesPage.js'), 'CategoriesPage');
+const BrandsPage = loadNamedPage(() => import('../features/catalog/brands/BrandsPage.js'), 'BrandsPage');
+const SettingsPage = loadNamedPage(() => import('../features/settings/SettingsPage.js'), 'SettingsPage');
+const PromotionsPage = loadNamedPage(() => import('../features/promotions/PromotionsPage.js'), 'PromotionsPage');
+const PromotionDetailPage = loadNamedPage(() => import('../features/promotions/PromotionDetailPage.js'), 'PromotionDetailPage');
+const PromotionNewPage = loadNamedPage(() => import('../features/promotions/PromotionNewPage.js'), 'PromotionNewPage');
 
 export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: '/login', element: <LoginPage /> },
+      { path: '/login', element: <RouteSuspense><LoginPage /></RouteSuspense> },
       { path: '/unauthorized', element: <UnauthorizedPage /> }
     ]
   },
@@ -30,12 +44,12 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { path: '/', element: <Navigate to="/dashboard" replace /> },
+      { path: '/', element: <HomeRedirect /> },
       {
         path: '/dashboard',
         element: (
           <RequireCapability capability="dashboard">
-            <DashboardPage />
+            <RouteSuspense><DashboardPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Dashboard' }
@@ -44,25 +58,43 @@ export const router = createBrowserRouter([
         path: '/orders',
         element: (
           <RequireCapability capability="orders">
-            <OrdersPage />
+            <RouteSuspense><OrdersPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Orders' }
       },
       {
+        path: '/orders/:id',
+        element: (
+          <RequireCapability capability="orders">
+            <RouteSuspense><OrderDetailPage /></RouteSuspense>
+          </RequireCapability>
+        ),
+        handle: { title: 'Order' }
+      },
+      {
         path: '/kyc',
         element: (
           <RequireCapability capability="kyc">
-            <KycPage />
+            <RouteSuspense><KycPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'KYC' }
       },
       {
+        path: '/kyc/:userId',
+        element: (
+          <RequireCapability capability="kyc">
+            <RouteSuspense><KycReviewPage /></RouteSuspense>
+          </RequireCapability>
+        ),
+        handle: { title: 'KYC Review' }
+      },
+      {
         path: '/inventory',
         element: (
-          <RequireCapability capability="inventory">
-            <InventoryPage />
+          <RequireCapability capability="inventory_edit">
+            <RouteSuspense><InventoryPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Inventory' }
@@ -70,26 +102,67 @@ export const router = createBrowserRouter([
       {
         path: '/payments',
         element: (
-          <RequireCapability capability="payments">
-            <PaymentsPage />
+          <RequireCapability capability="payments_read">
+            <RouteSuspense><PaymentsPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Payments' }
       },
       {
-        path: '/catalog',
+        path: '/payments/:id',
         element: (
-          <RequireCapability capability="catalog">
-            <CatalogPage />
+          <RequireCapability capability="payments_read">
+            <RouteSuspense><PaymentDetailPage /></RouteSuspense>
           </RequireCapability>
         ),
-        handle: { title: 'Catalog' }
+        handle: { title: 'Payment Detail' }
+      },
+      {
+        path: '/catalog',
+        element: (
+          <RequireCapability anyOf={['catalog', 'catalog_products_read']}>
+            <RouteSuspense><CatalogLayout /></RouteSuspense>
+          </RequireCapability>
+        ),
+        handle: { title: 'Catalog' },
+        children: [
+          { index: true, element: <Navigate to="/catalog/products" replace /> },
+          { path: 'products', element: <RouteSuspense><CatalogProductsPage /></RouteSuspense>, handle: { title: 'Catalog · Products' } },
+          {
+            path: 'products/new',
+            element: (
+              <RequireCapability capability="catalog">
+                <RouteSuspense><CatalogProductNewPage /></RouteSuspense>
+              </RequireCapability>
+            ),
+            handle: { title: 'Catalog · New Product' }
+          },
+          { path: 'products/:id', element: <RouteSuspense><CatalogProductDetailPage /></RouteSuspense>, handle: { title: 'Catalog · Product' } },
+          {
+            path: 'categories',
+            element: (
+              <RequireCapability capability="catalog">
+                <RouteSuspense><CategoriesPage /></RouteSuspense>
+              </RequireCapability>
+            ),
+            handle: { title: 'Catalog · Categories' }
+          },
+          {
+            path: 'brands',
+            element: (
+              <RequireCapability capability="catalog">
+                <RouteSuspense><BrandsPage /></RouteSuspense>
+              </RequireCapability>
+            ),
+            handle: { title: 'Catalog · Brands' }
+          }
+        ]
       },
       {
         path: '/settings',
         element: (
           <RequireCapability capability="settings_read">
-            <SettingsPage />
+            <RouteSuspense><SettingsPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Settings' }
@@ -97,11 +170,29 @@ export const router = createBrowserRouter([
       {
         path: '/promotions',
         element: (
-          <RequireCapability capability="dashboard">
-            <PromotionsPage />
+          <RequireCapability capability="promotions_read">
+            <RouteSuspense><PromotionsPage /></RouteSuspense>
           </RequireCapability>
         ),
         handle: { title: 'Promotions' }
+      },
+      {
+        path: '/promotions/:id',
+        element: (
+          <RequireCapability capability="promotions_read">
+            <RouteSuspense><PromotionDetailPage /></RouteSuspense>
+          </RequireCapability>
+        ),
+        handle: { title: 'Promotion Detail' }
+      },
+      {
+        path: '/promotions/new',
+        element: (
+          <RequireCapability capability="promotions_manage">
+            <RouteSuspense><PromotionNewPage /></RouteSuspense>
+          </RequireCapability>
+        ),
+        handle: { title: 'New Promotion' }
       },
       { path: '*', element: <NotFoundPage /> }
     ]

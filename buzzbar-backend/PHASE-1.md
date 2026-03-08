@@ -6,7 +6,7 @@ produces a runnable backend (docker-compose up works),
 exposes a stable set of endpoints,
 includes minimum tests for what it adds,
 is safe to build on for the next phase.
-Repo location: ../buzzbar-backend (sibling to BuzzBarWeb/).
+Repo location: ../buzzbar-backend (sibling to BuzzBar/).
 
 P1.0 — Foundation + Local Runtime
 Goal: skeleton service that runs locally and is ready for modules.
