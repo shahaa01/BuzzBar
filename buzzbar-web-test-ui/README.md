@@ -1,1 +1,1 @@
-This is going to be a TEST UI in web to test all the apis and backend flows - we are not gonna make it fancy in terms of visuals but stronger in terms of testing so that every flow can be tested, visual wise it can be minimal - BUT IT SHOULD HAVE EVERYTHING besides the ADMIN panel to test
+This is going to be a TEST UI in web to test all the apis and backend flows - we are not gonna make it fancy in terms of visuals but stronger in terms of testing so that every flow can be tested, visual wise it can be minimal - BUT IT SHOULD HAVE EVERYTHING besides the ADMIN panel to test.
