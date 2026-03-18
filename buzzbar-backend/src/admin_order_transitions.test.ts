@@ -53,11 +53,11 @@ describe('Admin order transitions', () => {
       emailVerified: true,
       kycStatus: 'verified'
     } as any);
-    const pendingUser = await UserModel.create({
-      email: 'pending@buzzbar.com',
+    const rejectedUser = await UserModel.create({
+      email: 'rejected@buzzbar.com',
       passwordHash: 'x',
       emailVerified: true,
-      kycStatus: 'pending'
+      kycStatus: 'rejected'
     } as any);
 
     const baseOrder = {
@@ -86,12 +86,14 @@ describe('Admin order transitions', () => {
       await OrderModel.create({
         ...baseOrder,
         orderNumber: 'BB-2026-000702',
-        userId: pendingUser._id,
-        status: 'KYC_PENDING_REVIEW',
+        userId: rejectedUser._id,
+        status: 'CREATED',
         paymentMethod: 'COD',
         paymentStatus: 'UNPAID',
-        kycGateStatus: 'REVIEW_REQUIRED',
-        kycStatusSnapshot: 'pending'
+        kycGateStatus: 'FAIL',
+        kycStatusSnapshot: 'rejected',
+        deliveryAgeCheckRequired: true,
+        progressBlockedReason: 'KYC_REQUIRED'
       } as any)
     )._id.toString();
 
@@ -162,7 +164,7 @@ describe('Admin order transitions', () => {
       .set('Authorization', `Bearer ${adminAccessToken}`)
       .send({ actionId: 'CONFIRM_ORDER' });
     expect(kycRes.status).toBe(409);
-    expect(kycRes.body.errorCode).toBe('KYC_REVIEW_REQUIRED');
+    expect(kycRes.body.errorCode).toBe('KYC_REQUIRED');
 
     const paymentRes = await request(app)
       .post(`/api/v1/admin/orders/${paymentBlockedOrderId}/transition`)

@@ -14,8 +14,9 @@ import { Skeleton } from '../../components/ui/skeleton.js';
 import { Textarea } from '../../components/ui/textarea.js';
 import { normalizeApiError, type ApiErrorShape } from '../../lib/api/normalizeError.js';
 import { useCapabilities } from '../../lib/permissions/useCapabilities.js';
-import { adminAssignOrder, adminCancelOrder, adminGetOrderDetail, adminListOrderAssignees, adminTransitionOrder, adminUnassignOrder } from './orders.api.js';
+import { adminAssignOrder, adminCancelOrder, adminGetOrderDetail, adminListOrderAssignees, adminMarkAgeVerificationFailed, adminTransitionOrder, adminUnassignOrder } from './orders.api.js';
 import type { KycStatusSnapshot, OrderStatus, PaymentStatus } from './orders.types.js';
+import { adminVerifyKycManually } from '../kyc/kyc.api.js';
 
 function fmtMoney(n: number) {
   return `NPR ${Math.trunc(n)}`;
@@ -240,10 +241,52 @@ export function OrderDetailPage() {
     onSettled: () => setPendingActionKey('')
   });
 
+  const verifyManually = useMutation({
+    mutationFn: (note: string) => adminVerifyKycManually(String(data?.customer?.userId ?? ''), note),
+    onMutate: () => {
+      setActionError(null);
+      setPendingActionKey('VERIFY_MANUALLY');
+    },
+    onSuccess: async () => {
+      toast.success('Account verified manually');
+      setManualVerifyOpen(false);
+      setManualVerifyNote('');
+      await qc.invalidateQueries({ queryKey: ['admin', 'orders'] });
+      await qc.invalidateQueries({ queryKey: ['admin', 'kyc'] });
+    },
+    onError: (err) => {
+      setActionError(normalizeApiError(err));
+    },
+    onSettled: () => setPendingActionKey('')
+  });
+
+  const ageVerificationFailed = useMutation({
+    mutationFn: (note?: string) => adminMarkAgeVerificationFailed({ id, note }),
+    onMutate: () => {
+      setActionError(null);
+      setPendingActionKey('AGE_VERIFICATION_FAILED');
+    },
+    onSuccess: async () => {
+      toast.success('Order cancelled for age verification failure');
+      setAgeFailOpen(false);
+      setAgeFailNote('');
+      await qc.invalidateQueries({ queryKey: ['admin', 'orders'] });
+      await qc.invalidateQueries({ queryKey: ['admin', 'kyc'] });
+    },
+    onError: (err) => {
+      setActionError(normalizeApiError(err));
+    },
+    onSettled: () => setPendingActionKey('')
+  });
+
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [assignOpen, setAssignOpen] = useState(false);
   const [unassignOpen, setUnassignOpen] = useState(false);
+  const [manualVerifyOpen, setManualVerifyOpen] = useState(false);
+  const [manualVerifyNote, setManualVerifyNote] = useState('');
+  const [ageFailOpen, setAgeFailOpen] = useState(false);
+  const [ageFailNote, setAgeFailNote] = useState('');
   const [selectedAssignee, setSelectedAssignee] = useState('');
   const [actionError, setActionError] = useState<ApiErrorShape | null>(null);
   const [pendingActionKey, setPendingActionKey] = useState('');
@@ -253,7 +296,8 @@ export function OrderDetailPage() {
   const items = data?.items ?? [];
   const actions = data?.operational.allowedActions ?? [];
   const currentAssigneeId = data?.assignment.assignedOperator?.id ?? '';
-  const isMutating = transitionOrder.isPending || cancelOrder.isPending || assignOrder.isPending || unassignOrder.isPending;
+  const isMutating =
+    transitionOrder.isPending || cancelOrder.isPending || assignOrder.isPending || unassignOrder.isPending || verifyManually.isPending || ageVerificationFailed.isPending;
 
   return (
     <div className="space-y-4">
@@ -304,6 +348,7 @@ export function OrderDetailPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <SummaryChip label={data.inventory.stockReserved ? 'Stock Reserved' : 'Stock Released'} active={data.inventory.stockReserved} />
+                  <SummaryChip label={data.kyc.deliveryAgeCheckRequired ? 'Delivery ID Check Required' : 'Age Check Clear'} active={data.kyc.deliveryAgeCheckRequired} />
                   <SummaryChip label={data.kyc.status === 'pending' ? 'KYC Pending' : 'KYC Clear'} active={data.kyc.status === 'pending'} />
                   <SummaryChip label={order.paymentStatus === 'PENDING' ? 'Payment Pending' : 'Payment Clear'} active={order.paymentStatus === 'PENDING'} />
                 </div>
@@ -332,6 +377,8 @@ export function OrderDetailPage() {
                   <DetailRow label="Updated" value={fmtDate(order.updatedAt)} />
                   <DetailRow label="Payment Method" value={order.paymentMethod} />
                   <DetailRow label="Payment Status" value={order.paymentStatus} />
+                  <DetailRow label="Delivery Age Check" value={order.deliveryAgeCheckRequired ? 'Required' : 'Not required'} />
+                  <DetailRow label="Progress Block" value={order.progressBlockedReason ?? '—'} />
                   <DetailRow label="Total Amount" value={fmtMoney(order.total)} />
                 </div>
               </SectionCard>
@@ -454,6 +501,12 @@ export function OrderDetailPage() {
                       </div>
                     </div>
                   ) : null}
+                  {canTransition && order.status === 'OUT_FOR_DELIVERY' && data.kyc.deliveryAgeCheckRequired ? (
+                    <Button variant="destructive" disabled={isMutating} onClick={() => setAgeFailOpen(true)}>
+                      {pendingActionKey === 'AGE_VERIFICATION_FAILED' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Mark age verification failed
+                    </Button>
+                  ) : null}
                 </div>
               </SectionCard>
 
@@ -571,12 +624,25 @@ export function OrderDetailPage() {
                   <DetailRow label="KYC Status" value={data.kyc.status.toUpperCase()} />
                   <DetailRow label="KYC Snapshot" value={data.kyc.statusSnapshot.toUpperCase()} />
                   <DetailRow label="Gate Status" value={data.kyc.gateStatus} />
+                  <DetailRow label="Delivery ID Check Required" value={data.kyc.deliveryAgeCheckRequired ? 'Yes' : 'No'} />
+                  <DetailRow label="Progress Block" value={data.kyc.progressBlockedReason ?? '—'} />
+                  <DetailRow label="Age Verification Note" value={data.kyc.ageVerificationNote ?? '—'} />
+                  <DetailRow label="Age Verification Updated" value={fmtDate(data.kyc.ageVerificationUpdatedAt)} />
                   <DetailRow label="Verified At" value={fmtDate(data.kyc.verifiedAt)} />
                   <DetailRow label="Rejected At" value={fmtDate(data.kyc.rejectedAt)} />
                   <DetailRow label="Rejection Reason" value={data.kyc.rejectionReason ?? '—'} />
                 </div>
                 {data.kyc.blockedReason ? (
                   <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">{data.kyc.blockedReason}</div>
+                ) : null}
+                {data.kyc.status !== 'verified' ? (
+                  <div className="mt-4 space-y-2">
+                    <div className="text-xs text-muted-foreground">Use manual verification if the customer shared ID via WhatsApp or phone and staff verified it.</div>
+                    <Button variant="secondary" disabled={verifyManually.isPending || !data.customer?.userId} onClick={() => setManualVerifyOpen(true)}>
+                      {pendingActionKey === 'VERIFY_MANUALLY' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Verify manually
+                    </Button>
+                  </div>
                 ) : null}
               </SectionCard>
 
@@ -649,6 +715,56 @@ export function OrderDetailPage() {
             <Button variant="destructive" disabled={unassignOrder.isPending} onClick={() => unassignOrder.mutate()}>
               {pendingActionKey === 'unassign' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Unassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manualVerifyOpen} onOpenChange={setManualVerifyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verify account manually?</DialogTitle>
+            <DialogDescription>This permanently verifies the customer account and clears active delivery-age-check blocks. A note is required.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Required note</div>
+            <Textarea
+              value={manualVerifyNote}
+              onChange={(event) => setManualVerifyNote(event.target.value)}
+              placeholder="ID received on WhatsApp and verified by employee..."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setManualVerifyOpen(false)}>
+              Back
+            </Button>
+            <Button disabled={verifyManually.isPending || !manualVerifyNote.trim()} onClick={() => verifyManually.mutate(manualVerifyNote.trim())}>
+              Verify manually
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ageFailOpen} onOpenChange={setAgeFailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark age verification failed?</DialogTitle>
+            <DialogDescription>This is only for orders already out for delivery. The order will be cancelled.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Optional note</div>
+            <Textarea
+              value={ageFailNote}
+              onChange={(event) => setAgeFailNote(event.target.value)}
+              placeholder="Customer refused ID, underage suspected, rider could not verify..."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setAgeFailOpen(false)}>
+              Back
+            </Button>
+            <Button variant="destructive" disabled={ageVerificationFailed.isPending} onClick={() => ageVerificationFailed.mutate(ageFailNote.trim() || undefined)}>
+              Mark failed
             </Button>
           </DialogFooter>
         </DialogContent>

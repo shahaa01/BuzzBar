@@ -376,6 +376,19 @@ paths:
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      kycStatus: { type: string, enum: [not_started, pending, verified, rejected] }
+                      attemptId: { type: string }
+                      autoDecision: { type: string, enum: [auto_verified, needs_review] }
+                      attemptSummary: { $ref: "#/components/schemas/KycAttemptSummary" }
         "400":
           description: Validation/upload error
         "501":
@@ -389,6 +402,21 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      kycStatus: { type: string, enum: [not_started, pending, verified, rejected] }
+                      lastAttemptId: { type: string, nullable: true }
+                      submittedAt: { type: string, format: date-time, nullable: true }
+                      reviewedAt: { type: string, format: date-time, nullable: true }
+                      rejectionReason: { type: string, nullable: true }
+                      attemptSummary: { $ref: "#/components/schemas/KycAttemptSummary" }
 
   /api/v1/orders:
     post:
@@ -1135,6 +1163,31 @@ paths:
         "200":
           description: OK
 
+  /api/v1/admin/kyc/{userId}/verify-manually:
+    post:
+      tags: [AdminKYC]
+      summary: Verify user manually and clear active order age-check blocks
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: KYC_ALREADY_VERIFIED
+
   /api/v1/admin/kyc/{userId}/reject:
     post:
       tags: [AdminKYC]
@@ -1262,6 +1315,11 @@ paths:
                           paymentStatus: { type: string, enum: [UNPAID, PENDING, PAID, FAILED] }
                           kycGateStatus: { type: string, enum: [PASS, REVIEW_REQUIRED, FAIL] }
                           kycStatusSnapshot: { type: string, enum: [not_started, pending, verified, rejected] }
+                          deliveryAgeCheckRequired: { type: boolean }
+                          progressBlockedReason: { type: string, enum: [KYC_REQUIRED, AGE_VERIFICATION_FAILED], nullable: true }
+                          ageVerificationNote: { type: string, nullable: true }
+                          ageVerificationUpdatedAt: { type: string, format: date-time, nullable: true }
+                          ageVerificationUpdatedByAdminId: { type: string, nullable: true }
                           subtotal: { type: integer }
                           discount: { type: integer }
                           deliveryFee: { type: integer }
@@ -1301,7 +1359,7 @@ paths:
                             reasonCode:
                               type: string
                               nullable: true
-                              enum: [KYC_REVIEW_REQUIRED, PAYMENT_NOT_PAID]
+                              enum: [KYC_REQUIRED, KYC_REVIEW_REQUIRED, PAYMENT_NOT_PAID]
                       operational:
                         type: object
                         properties:
@@ -1320,7 +1378,7 @@ paths:
                             type: array
                             items:
                               type: string
-                              enum: [KYC_REVIEW_REQUIRED, PAYMENT_NOT_PAID]
+                              enum: [KYC_REQUIRED, KYC_REVIEW_REQUIRED, PAYMENT_NOT_PAID]
                       assignment:
                         type: object
                         properties:
@@ -1397,7 +1455,7 @@ paths:
             Warning:
               schema: { type: string, example: '299 - "Deprecated: use POST /api/v1/admin/orders/:id/transition"' }
         "409":
-          description: INVALID_STATUS_TRANSITION | KYC_REVIEW_REQUIRED | PAYMENT_NOT_PAID | ORDER_ALREADY_DELIVERED
+          description: INVALID_STATUS_TRANSITION | KYC_REQUIRED | KYC_REVIEW_REQUIRED | PAYMENT_NOT_PAID | ORDER_ALREADY_DELIVERED
 
   /api/v1/admin/orders/{id}/transition:
     post:
@@ -1441,7 +1499,7 @@ paths:
                         type: string
                         enum: [CONFIRM_ORDER, MOVE_TO_PACKING, MARK_READY_FOR_DISPATCH, MARK_OUT_FOR_DELIVERY, MARK_DELIVERED, CANCEL_ORDER]
         "409":
-          description: ORDER_TRANSITION_INVALID | KYC_REVIEW_REQUIRED | PAYMENT_NOT_PAID | ORDER_ALREADY_DELIVERED
+          description: ORDER_TRANSITION_INVALID | KYC_REQUIRED | KYC_REVIEW_REQUIRED | PAYMENT_NOT_PAID | ORDER_ALREADY_DELIVERED
 
   /api/v1/admin/orders/{id}/assign:
     patch:
@@ -1517,6 +1575,32 @@ paths:
           description: NOT_FOUND
         "409":
           description: ORDER_TERMINAL
+
+  /api/v1/admin/orders/{id}/age-verification-failed:
+    post:
+      tags: [AdminOrders]
+      summary: Cancel an out-for-delivery order due to age verification failure
+      security: [{ AdminBearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: NOT_FOUND
+        "409":
+          description: AGE_VERIFICATION_ACTION_NOT_ALLOWED | ORDER_TERMINAL
 
   /api/v1/admin/promotions:
     get:
@@ -2014,6 +2098,58 @@ components:
         clientOcrText: { type: string }
         clientDobRaw: { type: string }
         clientConfidence: { type: number }
+
+    KycAttemptSummary:
+      type: object
+      properties:
+        attemptId: { type: string }
+        status: { type: string, enum: [pending, verified, rejected] }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        autoDecision: { type: string, enum: [auto_verified, needs_review] }
+        autoDecisionReason: { type: string, nullable: true }
+        client:
+          type: object
+          properties:
+            ocrText: { type: string, nullable: true }
+            dobRaw: { type: string, nullable: true }
+            confidence: { type: number, nullable: true }
+        server:
+          type: object
+          properties:
+            ocrText: { type: string, nullable: true }
+            dobRaw: { type: string, nullable: true }
+            confidence: { type: number, nullable: true }
+        parsedDob:
+          type: object
+          properties:
+            clientDobAD: { type: string, format: date-time, nullable: true }
+            serverDobAD: { type: string, format: date-time, nullable: true }
+            clientDobBS: { type: string, nullable: true }
+            serverDobBS: { type: string, nullable: true }
+            clientDobSource: { type: string, enum: [AD, BS, UNKNOWN] }
+            serverDobSource: { type: string, enum: [AD, BS, UNKNOWN] }
+        interpretation:
+          type: object
+          properties:
+            differenceDays: { type: number, nullable: true }
+            toleranceDays: { type: number }
+            withinTolerance: { type: boolean, nullable: true }
+            parseConfidence: { type: number, nullable: true }
+            parseErrors:
+              type: array
+              items: { type: string }
+            clientParseErrors:
+              type: array
+              items: { type: string }
+            serverParseErrors:
+              type: array
+              items: { type: string }
+            legalAgeMin: { type: number, nullable: true }
+            ageYears: { type: number, nullable: true }
+            ageValid: { type: boolean, nullable: true }
+            reviewRequired: { type: boolean }
+            reviewRequiredReason: { type: string, nullable: true }
 
     OrderCreateRequest:
       type: object

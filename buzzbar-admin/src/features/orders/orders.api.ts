@@ -56,3 +56,8 @@ export async function adminCancelOrder(opts: { id: string; reason?: string }) {
   const res = await api.post(`/api/v1/admin/orders/${opts.id}/cancel`, opts.reason ? { reason: opts.reason } : {});
   return res.data?.data as { ok: true };
 }
+
+export async function adminMarkAgeVerificationFailed(opts: { id: string; note?: string }) {
+  const res = await api.post(`/api/v1/admin/orders/${opts.id}/age-verification-failed`, opts.note ? { note: opts.note } : {});
+  return res.data?.data as { ok: true; status: string; userStatusChanged: boolean };
+}

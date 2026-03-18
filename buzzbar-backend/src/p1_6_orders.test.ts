@@ -101,7 +101,7 @@ describe('P1.6 orders', () => {
     return { variantId: variant._id.toString() };
   }
 
-  it('blocks order if kycStatus == rejected', async () => {
+  it('allows order if kycStatus == rejected but blocks progression', async () => {
     const { token, userId } = await signup('o1@buzzbar.com');
     await UserModel.updateOne({ _id: userId }, { $set: { kycStatus: 'rejected' } });
 
@@ -112,11 +112,14 @@ describe('P1.6 orders', () => {
       .post('/api/v1/orders')
       .set('Authorization', `Bearer ${token}`)
       .send({ paymentMethod: 'COD', address: { fullAddress: 'Some address', area: 'Kathmandu' } });
-    expect(create.status).toBe(403);
-    expect(create.body.errorCode).toBe('KYC_REJECTED');
+    expect(create.status).toBe(201);
+    const order = (await OrderModel.findOne({ userId }).lean().exec()) as any;
+    expect(order?.status).toBe('CREATED');
+    expect(order?.deliveryAgeCheckRequired).toBe(true);
+    expect(order?.progressBlockedReason).toBe('KYC_REQUIRED');
   });
 
-  it('allows order if kycStatus == pending but sets KYC_PENDING_REVIEW', async () => {
+  it('allows order if kycStatus == pending and sets delivery age check without blocking progress', async () => {
     const { token, userId } = await signup('o2@buzzbar.com');
     await UserModel.updateOne({ _id: userId }, { $set: { kycStatus: 'pending' } });
 
@@ -130,8 +133,28 @@ describe('P1.6 orders', () => {
     expect(create.status).toBe(201);
 
     const order = (await OrderModel.findOne({ userId }).lean().exec()) as any;
-    expect(order?.status).toBe('KYC_PENDING_REVIEW');
+    expect(order?.status).toBe('CREATED');
     expect(order?.paymentStatus).toBe('PENDING');
+    expect(order?.deliveryAgeCheckRequired).toBe(true);
+    expect(order?.progressBlockedReason).toBeUndefined();
+  });
+
+  it('allows order if kycStatus == not_started and snapshots delivery age check', async () => {
+    const { token, userId } = await signup('o2b@buzzbar.com');
+
+    const { variantId } = await seedVariant(1000, 5);
+    await request(app).post('/api/v1/cart/items').set('Authorization', `Bearer ${token}`).send({ variantId, qty: 1 });
+
+    const create = await request(app)
+      .post('/api/v1/orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ paymentMethod: 'COD', address: { fullAddress: 'Some address', area: 'Kathmandu' } });
+    expect(create.status).toBe(201);
+
+    const order = (await OrderModel.findOne({ userId }).lean().exec()) as any;
+    expect(order?.status).toBe('CREATED');
+    expect(order?.deliveryAgeCheckRequired).toBe(true);
+    expect(order?.progressBlockedReason).toBeUndefined();
   });
 
   it('rejects COD during configured night window', async () => {
@@ -243,7 +266,7 @@ describe('P1.6 orders', () => {
     expect(stockAfter?.reserved).toBe(0);
   });
 
-  it('KYC rejection cancels KYC_PENDING_REVIEW orders and releases reserved', async () => {
+  it('KYC rejection blocks open orders instead of cancelling them', async () => {
     const { token, userId } = await signup('o7@buzzbar.com');
 
     // Create a pending KYC attempt (AND gate failure) so admin reject is allowed.
@@ -276,8 +299,10 @@ describe('P1.6 orders', () => {
     expect(reject.status).toBe(200);
 
     const order = (await OrderModel.findById(orderId).lean().exec()) as any;
-    expect(order?.status).toBe('CANCELLED');
+    expect(order?.status).toBe('CREATED');
+    expect(order?.progressBlockedReason).toBe('KYC_REQUIRED');
+    expect(order?.deliveryAgeCheckRequired).toBe(true);
     const stockAfter = (await InventoryStockModel.findOne({ variantId }).lean().exec()) as any;
-    expect(stockAfter?.reserved).toBe(0);
+    expect(stockAfter?.reserved).toBe(1);
   });
 });

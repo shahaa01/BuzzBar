@@ -29,6 +29,9 @@ dotenv.config();
   KYC_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
   KYC_DOB_TOLERANCE_DAYS: z.coerce.number().int().min(0).default(90),
   KYC_OCR_MODE: z.enum(['real', 'test', 'fake']).optional(),
+  KYC_OCR_LANGS: z.string().optional(),
+  KYC_OCR_PSM: z.coerce.number().int().positive().optional(),
+  KYC_OCR_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
   // Payments (P1.8 ops hardening)
   WALLET_PENDING_TIMEOUT_MIN: z.coerce.number().int().positive().optional(),

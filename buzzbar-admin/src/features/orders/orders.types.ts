@@ -11,6 +11,7 @@ export type OrderStatus =
 export type PaymentMethod = 'COD' | 'WALLET';
 export type PaymentStatus = 'UNPAID' | 'PENDING' | 'PAID' | 'FAILED';
 export type KycStatusSnapshot = 'not_started' | 'pending' | 'verified' | 'rejected';
+export type OrderProgressBlockedReason = 'KYC_REQUIRED' | 'AGE_VERIFICATION_FAILED';
 export type AdminOrderAction = {
   id: string;
   label: string;
@@ -28,6 +29,8 @@ export type AdminOrderListItem = {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   kycStatusSnapshot: KycStatusSnapshot;
+  deliveryAgeCheckRequired: boolean;
+  progressBlockedReason?: OrderProgressBlockedReason;
   total: number;
   createdAt: string;
   assignedAt?: string;
@@ -64,6 +67,11 @@ export type AdminOrderDetail = {
   paymentStatus: PaymentStatus;
   kycGateStatus: 'PASS' | 'REVIEW_REQUIRED' | 'FAIL';
   kycStatusSnapshot: KycStatusSnapshot;
+  deliveryAgeCheckRequired: boolean;
+  progressBlockedReason?: OrderProgressBlockedReason;
+  ageVerificationNote?: string;
+  ageVerificationUpdatedAt?: string;
+  ageVerificationUpdatedByAdminId?: string;
   addressSnapshot: {
     label?: string;
     fullAddress?: string;
@@ -184,6 +192,10 @@ export type AdminOrderDetailResponse = {
     gateStatus: 'PASS' | 'REVIEW_REQUIRED' | 'FAIL';
     status: KycStatusSnapshot;
     statusSnapshot: KycStatusSnapshot;
+    deliveryAgeCheckRequired: boolean;
+    progressBlockedReason?: OrderProgressBlockedReason;
+    ageVerificationNote?: string;
+    ageVerificationUpdatedAt?: string;
     verifiedAt?: string;
     rejectedAt?: string;
     rejectionReason?: string;

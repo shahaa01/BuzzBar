@@ -9,7 +9,7 @@ import { validatePromotion } from '../promotions/promotions.service.js';
 import { PaymentTransactionModel } from '../payments/payments.models.js';
 import { UserModel } from '../user/user.models.js';
 import { InventoryStockModel, computeAvailability } from '../inventory/inventory.models.js';
-import { OrderCounterModel, OrderModel, OrderOperationAuditModel, type OrderStatus, type PaymentMethod, type PaymentStatus, type KycGateStatus } from './orders.models.js';
+import { OrderCounterModel, OrderModel, OrderOperationAuditModel, type OrderStatus, type PaymentMethod, type PaymentStatus, type KycGateStatus, type OrderProgressBlockedReason } from './orders.models.js';
 import { reserveStockLines, releaseReservedStockLines, commitDeliveredStockLines } from './orders.stock.js';
 import { isWithinNightHours, getYearInTimeZone } from './orders.time.js';
 
@@ -72,7 +72,6 @@ export async function createOrderFromCart(opts: {
 
   const user = await UserModel.findById(uid).exec();
   if (!user) return { ok: false as const, errorCode: 'NOT_FOUND' as const };
-  if (user.kycStatus === 'rejected') return { ok: false as const, errorCode: 'KYC_REJECTED' as const };
 
   const settings = await ensureSettings();
   const serviceAreas = ((settings as any)?.serviceAreas ?? []) as string[];
@@ -163,8 +162,10 @@ export async function createOrderFromCart(opts: {
   const deliveryFee = floorInt(Number((settings as any)?.deliveryFeeFlat ?? 0));
   const total = Math.max(subtotal - discount + deliveryFee, 0);
 
-  const kycGateStatus: KycGateStatus = user.kycStatus === 'verified' ? 'PASS' : user.kycStatus === 'pending' ? 'REVIEW_REQUIRED' : 'FAIL';
-  const status: OrderStatus = kycGateStatus === 'REVIEW_REQUIRED' ? 'KYC_PENDING_REVIEW' : 'CREATED';
+  const deliveryAgeCheckRequired = user.kycStatus !== 'verified';
+  const progressBlockedReason: OrderProgressBlockedReason | undefined = user.kycStatus === 'rejected' ? 'KYC_REQUIRED' : undefined;
+  const kycGateStatus: KycGateStatus = user.kycStatus === 'verified' ? 'PASS' : user.kycStatus === 'rejected' ? 'FAIL' : 'REVIEW_REQUIRED';
+  const status: OrderStatus = 'CREATED';
   const paymentStatus: PaymentStatus = opts.paymentMethod === 'COD' ? 'UNPAID' : 'PENDING';
 
   const reserveRes = await reserveStockLines(orderItems.map((it) => ({ variantId: it.variantId, qty: it.qty })));
@@ -180,6 +181,8 @@ export async function createOrderFromCart(opts: {
       paymentStatus,
       kycGateStatus,
       kycStatusSnapshot: user.kycStatus,
+      deliveryAgeCheckRequired,
+      progressBlockedReason,
       addressSnapshot: opts.address,
       items: orderItems,
       promoSnapshot,
@@ -208,7 +211,7 @@ export async function listCustomerOrders(opts: { userId: string; page: number; l
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(opts.limit)
-      .select({ orderNumber: 1, status: 1, paymentMethod: 1, paymentStatus: 1, total: 1, createdAt: 1 })
+      .select({ orderNumber: 1, status: 1, paymentMethod: 1, paymentStatus: 1, kycStatusSnapshot: 1, deliveryAgeCheckRequired: 1, progressBlockedReason: 1, total: 1, createdAt: 1 })
       .lean(),
     OrderModel.countDocuments({ userId: uid })
   ]);
@@ -241,12 +244,44 @@ export async function cancelOrderAndReleaseStock(opts: { orderId: string; actorA
   return { ok: true as const };
 }
 
-export async function cancelOrdersForKycRejected(opts: { userId: string; reason: string }) {
+export async function markOpenOrdersForRejectedKyc(opts: { userId: string; reason: string }) {
   const uid = ensureObjectId(opts.userId);
   if (!uid) return;
-  const orders = await OrderModel.find({ userId: uid, status: 'KYC_PENDING_REVIEW' }).exec();
-  for (const o of orders) {
-    await cancelOrderAndReleaseStock({ orderId: o._id.toString(), reason: opts.reason });
+  const orders = await OrderModel.find({ userId: uid, status: { $nin: ['CANCELLED', 'DELIVERED'] } }).exec();
+  for (const order of orders) {
+    if (order.status === 'KYC_PENDING_REVIEW') {
+      order.status = 'CREATED';
+    }
+    order.deliveryAgeCheckRequired = true;
+    order.progressBlockedReason = 'KYC_REQUIRED';
+    order.kycGateStatus = 'FAIL';
+    order.ageVerificationNote = opts.reason;
+    await order.save();
+  }
+}
+
+export async function clearOpenOrderAgeVerificationFlags(opts: {
+  userId: string;
+  actorAdminId?: string;
+  note?: string;
+}) {
+  const uid = ensureObjectId(opts.userId);
+  const actorId = opts.actorAdminId ? ensureObjectId(opts.actorAdminId) : null;
+  if (!uid) return;
+  const orders = await OrderModel.find({ userId: uid, status: { $nin: ['CANCELLED', 'DELIVERED'] } }).exec();
+  for (const order of orders) {
+    if (order.status === 'KYC_PENDING_REVIEW') {
+      order.status = 'CREATED';
+    }
+    order.deliveryAgeCheckRequired = false;
+    order.progressBlockedReason = undefined;
+    order.kycGateStatus = 'PASS';
+    order.ageVerificationUpdatedAt = new Date();
+    order.ageVerificationUpdatedByAdminId = actorId ?? undefined;
+    if (opts.note?.trim()) {
+      order.ageVerificationNote = opts.note.trim();
+    }
+    await order.save();
   }
 }
 
@@ -361,6 +396,8 @@ export async function adminListOrders(opts: {
           paymentMethod: 1,
           paymentStatus: 1,
           kycStatusSnapshot: 1,
+          deliveryAgeCheckRequired: 1,
+          progressBlockedReason: 1,
           total: 1,
           createdAt: 1,
           assignedAt: 1,
@@ -396,7 +433,8 @@ export async function adminListOrders(opts: {
         order: {
           status: item.status as OrderStatus,
           paymentMethod: item.paymentMethod,
-          paymentStatus: item.paymentStatus
+          paymentStatus: item.paymentStatus,
+          progressBlockedReason: item.progressBlockedReason
         },
         userKycStatus: item.user?.kycStatus
       })
@@ -475,12 +513,15 @@ async function recordOrderOperationAudit(opts: {
 }
 
 export function computeAdminOrderActions(opts: {
-  order: { status: OrderStatus; paymentMethod: any; paymentStatus: any };
+  order: { status: OrderStatus; paymentMethod: any; paymentStatus: any; progressBlockedReason?: string | null };
   userKycStatus?: string;
 }) {
   const from = opts.order.status;
   const candidates = TRANSITIONS[from] ?? [];
   return candidates.map((to) => {
+    if (opts.order.progressBlockedReason === 'KYC_REQUIRED' && to !== 'CANCELLED') {
+      return { to, allowed: false as const, reasonCode: 'KYC_REQUIRED' as const };
+    }
     if (from === 'KYC_PENDING_REVIEW' && to !== 'CANCELLED') {
       if (opts.userKycStatus !== 'verified') return { to, allowed: false as const, reasonCode: 'KYC_REVIEW_REQUIRED' as const };
     }
@@ -513,7 +554,7 @@ function describeOrderAction(to: OrderStatus) {
 }
 
 function buildOrderActionDescriptors(opts: {
-  order: { status: OrderStatus; paymentMethod: any; paymentStatus: any };
+  order: { status: OrderStatus; paymentMethod: any; paymentStatus: any; progressBlockedReason?: string | null };
   userKycStatus?: string;
 }) {
   return computeAdminOrderActions(opts).map((action) => {
@@ -553,7 +594,12 @@ export async function adminTransitionOrder(opts: { orderId: string; actionId: st
   }
 
   const actions = buildOrderActionDescriptors({
-    order: { status: order.status as OrderStatus, paymentMethod: order.paymentMethod, paymentStatus: order.paymentStatus },
+    order: {
+      status: order.status as OrderStatus,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      progressBlockedReason: order.progressBlockedReason
+    },
     userKycStatus
   });
 
@@ -600,6 +646,71 @@ export async function adminTransitionOrder(opts: { orderId: string; actionId: st
   });
 
   return { ok: true as const, status: order.status, actionId: action.id };
+}
+
+export async function adminMarkAgeVerificationFailed(opts: {
+  orderId: string;
+  adminId: string;
+  note?: string;
+}) {
+  const oid = ensureObjectId(opts.orderId);
+  const actorId = ensureObjectId(opts.adminId);
+  if (!oid || !actorId) return { ok: false as const, errorCode: 'NOT_FOUND' as const };
+
+  const order = await OrderModel.findById(oid).exec();
+  if (!order) return { ok: false as const, errorCode: 'NOT_FOUND' as const };
+  if (order.status !== 'OUT_FOR_DELIVERY') {
+    return { ok: false as const, errorCode: 'AGE_VERIFICATION_ACTION_NOT_ALLOWED' as const, details: { status: order.status } };
+  }
+
+  const user = await UserModel.findById(order.userId).exec();
+  if (!user) return { ok: false as const, errorCode: 'NOT_FOUND' as const };
+
+  const cancelResult = await cancelOrderAndReleaseStock({
+    orderId: order._id.toString(),
+    actorAdminId: opts.adminId,
+    reason: 'AGE_VERIFICATION_FAILED'
+  });
+  if (!cancelResult.ok) return cancelResult;
+
+  const cancelled = await OrderModel.findById(order._id).exec();
+  if (!cancelled) return { ok: false as const, errorCode: 'NOT_FOUND' as const };
+  cancelled.progressBlockedReason = 'AGE_VERIFICATION_FAILED';
+  cancelled.deliveryAgeCheckRequired = true;
+  cancelled.ageVerificationUpdatedAt = new Date();
+  cancelled.ageVerificationUpdatedByAdminId = actorId as any;
+  cancelled.ageVerificationNote = opts.note?.trim() || 'AGE_VERIFICATION_FAILED';
+  await cancelled.save();
+
+  const before = {
+    kycStatus: user.kycStatus,
+    kycVerifiedAt: user.kycVerifiedAt,
+    kycRejectedAt: user.kycRejectedAt,
+    kycRejectionReason: user.kycRejectionReason
+  };
+  if (user.kycStatus !== 'verified') {
+    user.kycStatus = 'rejected';
+    user.kycVerifiedAt = undefined;
+    user.kycRejectedAt = new Date();
+    user.kycRejectionReason = 'AGE_VERIFICATION_FAILED';
+    await user.save();
+  }
+
+  await recordOrderOperationAudit({
+    orderId: cancelled._id,
+    actorAdminId: opts.adminId,
+    type: 'STATUS_TRANSITION',
+    actionId: 'AGE_VERIFICATION_FAILED',
+    fromStatus: 'OUT_FOR_DELIVERY',
+    toStatus: 'CANCELLED',
+    reason: opts.note?.trim() || 'AGE_VERIFICATION_FAILED'
+  });
+
+  return {
+    ok: true as const,
+    status: cancelled.status,
+    userStatusChanged: before.kycStatus !== user.kycStatus
+  };
 }
 
 export async function adminAssignOrder(opts: { orderId: string; assignedToAdminId: string; actorAdminId: string }) {
@@ -671,7 +782,8 @@ export async function getAdminOrderDetail(opts: { orderId: string }) {
     order: {
       status: order.status as OrderStatus,
       paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus
+      paymentStatus: order.paymentStatus,
+      progressBlockedReason: order.progressBlockedReason
     },
     userKycStatus: (user as any)?.kycStatus
   });
@@ -702,15 +814,20 @@ export async function getAdminOrderDetail(opts: { orderId: string }) {
   const adminById = new Map<string, any>(assignmentAdminLookup.map((admin: any) => [admin._id.toString(), admin]));
 
   return {
-    order: {
-      id: order._id.toString(),
-      orderNumber: order.orderNumber,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      kycGateStatus: order.kycGateStatus,
-      kycStatusSnapshot: order.kycStatusSnapshot,
-      addressSnapshot: order.addressSnapshot,
+      order: {
+        id: order._id.toString(),
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        kycGateStatus: order.kycGateStatus,
+        kycStatusSnapshot: order.kycStatusSnapshot,
+        deliveryAgeCheckRequired: Boolean(order.deliveryAgeCheckRequired),
+        progressBlockedReason: order.progressBlockedReason,
+        ageVerificationNote: order.ageVerificationNote,
+        ageVerificationUpdatedAt: order.ageVerificationUpdatedAt?.toISOString?.(),
+        ageVerificationUpdatedByAdminId: order.ageVerificationUpdatedByAdminId?.toString?.(),
+        addressSnapshot: order.addressSnapshot,
       subtotal: order.subtotal,
       discount: order.discount,
       deliveryFee: order.deliveryFee,
@@ -821,11 +938,17 @@ export async function getAdminOrderDetail(opts: { orderId: string }) {
       gateStatus: order.kycGateStatus,
       status: (user as any)?.kycStatus ?? order.kycStatusSnapshot,
       statusSnapshot: order.kycStatusSnapshot,
+      deliveryAgeCheckRequired: Boolean(order.deliveryAgeCheckRequired),
+      progressBlockedReason: order.progressBlockedReason,
+      ageVerificationNote: order.ageVerificationNote,
+      ageVerificationUpdatedAt: order.ageVerificationUpdatedAt?.toISOString?.(),
       verifiedAt: (user as any)?.kycVerifiedAt?.toISOString?.(),
       rejectedAt: (user as any)?.kycRejectedAt?.toISOString?.(),
       rejectionReason: (user as any)?.kycRejectionReason,
       blockedReason:
-      blockedConditions.includes('KYC_REVIEW_REQUIRED')
+        blockedConditions.includes('KYC_REQUIRED')
+          ? 'KYC must be re-verified before this order can advance.'
+          : blockedConditions.includes('KYC_REVIEW_REQUIRED')
           ? 'KYC review required before this order can advance.'
           : order.kycGateStatus === 'FAIL'
             ? 'KYC failed for this customer.'

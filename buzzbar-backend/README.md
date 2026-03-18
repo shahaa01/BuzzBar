@@ -255,6 +255,18 @@ Tools:
 
 * ML Kit Text Recognition
 * Flutter image processing libraries
+* Backend local OCR via `tesseract` CLI with `eng+nep` language data when `KYC_OCR_MODE=real`
+
+Local backend OCR notes:
+
+* install `tesseract`
+* install language data for:
+  * `eng`
+  * `nep`
+* recommended env:
+  * `KYC_OCR_LANGS=eng+nep`
+  * `KYC_OCR_PSM=6`
+  * `KYC_OCR_TIMEOUT_MS=5000`
 
 5. Date Extraction
 

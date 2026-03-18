@@ -34,3 +34,7 @@ export async function adminRejectKyc(userId: string, reason: string) {
   return res.data?.data as { ok: true; userId: string; attemptId: string };
 }
 
+export async function adminVerifyKycManually(userId: string, note: string) {
+  const res = await api.post(`/api/v1/admin/kyc/${userId}/verify-manually`, { note });
+  return res.data?.data as { ok: true; userId: string; attemptId?: string };
+}

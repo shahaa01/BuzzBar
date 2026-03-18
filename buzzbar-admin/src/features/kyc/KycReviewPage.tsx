@@ -9,7 +9,7 @@ import { Card } from '../../components/ui/card.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
 import { Textarea } from '../../components/ui/textarea.js';
 import { normalizeApiError } from '../../lib/api/normalizeError.js';
-import { adminApproveKyc, adminGetUserKyc, adminRejectKyc } from './kyc.api.js';
+import { adminApproveKyc, adminGetUserKyc, adminRejectKyc, adminVerifyKycManually } from './kyc.api.js';
 
 function fmtDate(iso?: string) {
   if (!iso) return '—';
@@ -63,6 +63,21 @@ export function KycReviewPage() {
     }
   });
 
+  const verifyManually = useMutation({
+    mutationFn: (note: string) => adminVerifyKycManually(userId, note),
+    onSuccess: async () => {
+      toast.success('KYC verified manually');
+      await qc.invalidateQueries({ queryKey: ['admin', 'kyc', 'queue'] });
+      await qc.invalidateQueries({ queryKey });
+      setManualNote('');
+      setManualOpen(false);
+    },
+    onError: (err) => {
+      const e = normalizeApiError(err);
+      toast.error(e.errorCode ? `${e.errorCode}: ${e.message}` : e.message);
+    }
+  });
+
   const data = q.data;
   const user = data?.user;
   const attempt = data?.attempt;
@@ -74,6 +89,8 @@ export function KycReviewPage() {
 
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualNote, setManualNote] = useState('');
 
   const pending = attempt?.status === 'pending';
 
@@ -268,9 +285,12 @@ export function KycReviewPage() {
                 <Button variant="destructive" disabled={!pending} onClick={() => setRejectOpen(true)}>
                   Reject KYC
                 </Button>
+                <Button variant="secondary" disabled={verifyManually.isPending || user.kycStatus === 'verified'} onClick={() => setManualOpen(true)}>
+                  Verify manually
+                </Button>
 
                 <div className="text-xs text-muted-foreground">
-                  Rejecting will mark the user as rejected and cancel their <span className="font-mono">KYC_PENDING_REVIEW</span> orders.
+                  Rejection no longer cancels open orders automatically. It blocks order progression until KYC is verified again.
                 </div>
               </div>
             </Card>
@@ -349,6 +369,33 @@ export function KycReviewPage() {
               }}
             >
               Reject KYC
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verify manually?</DialogTitle>
+            <DialogDescription>This permanently verifies the account and clears delivery-age-check blocks on active orders. A note is required.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 grid gap-2">
+            <div className="text-xs text-muted-foreground">Note</div>
+            <Textarea value={manualNote} onChange={(e) => setManualNote(e.target.value)} placeholder="ID received on WhatsApp and verified by employee…" />
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setManualOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={verifyManually.isPending || !manualNote.trim()}
+              onClick={async () => {
+                await verifyManually.mutateAsync(manualNote.trim());
+                setManualOpen(false);
+              }}
+            >
+              Verify manually
             </Button>
           </DialogFooter>
         </DialogContent>

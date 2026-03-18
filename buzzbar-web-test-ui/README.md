@@ -1,1 +1,44 @@
-This is going to be a TEST UI in web to test all the apis and backend flows - we are not gonna make it fancy in terms of visuals but stronger in terms of testing so that every flow can be tested, visual wise it can be minimal - BUT IT SHOULD HAVE EVERYTHING besides the ADMIN panel to test.
+# BuzzBar Web Test UI
+
+This is a minimal web test surface for exercising the non-admin BuzzBar backend APIs and flows.
+
+It is intentionally not a polished customer product. The focus is:
+
+- broad API coverage
+- easy token/session inspection
+- request/response visibility
+- quick flow testing without touching the database
+
+It covers:
+
+- health and readiness
+- customer auth
+- `/me`
+- public catalog browse
+- cart
+- promotion validation
+- KYC submit/status
+- customer orders
+- customer wallet/mock payment init/confirm
+
+It does **not** cover admin panel workflows.
+
+## Run
+
+```bash
+npm install
+npm run dev
+```
+
+Default backend base URL in the UI:
+
+```txt
+http://localhost:3000
+```
+
+## Validation
+
+```bash
+npm run typecheck
+npm run build
+```

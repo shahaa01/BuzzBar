@@ -446,6 +446,8 @@ export function OrdersPage() {
                           <Badge variant={orderBadgeVariant(item.status)}>{item.status}</Badge>
                           <Badge variant={paymentBadgeVariant(item.paymentStatus)}>{item.paymentStatus}</Badge>
                           <Badge variant={kycBadgeVariant(item.kycStatusSnapshot)}>{item.kycStatusSnapshot}</Badge>
+                          {item.deliveryAgeCheckRequired ? <Badge variant="warning">Delivery ID Check Required</Badge> : null}
+                          {item.progressBlockedReason ? <Badge variant="destructive">{item.progressBlockedReason}</Badge> : null}
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium">{fmtMoney(item.total)}</td>

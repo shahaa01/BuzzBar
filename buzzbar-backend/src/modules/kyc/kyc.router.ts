@@ -20,6 +20,66 @@ const upload = multer({
   }
 });
 
+function getDobToleranceDays() {
+  const n = Number(process.env.KYC_DOB_TOLERANCE_DAYS ?? '90');
+  if (!Number.isFinite(n)) return 90;
+  return Math.max(0, Math.round(n));
+}
+
+function asIso(value: unknown) {
+  return value instanceof Date ? value.toISOString() : undefined;
+}
+
+function toAttemptSummary(attempt: any) {
+  if (!attempt) return undefined;
+
+  const toleranceDays = getDobToleranceDays();
+  const differenceDays = typeof attempt.dobDifferenceDays === 'number' ? attempt.dobDifferenceDays : undefined;
+  const ageYears = typeof attempt.ageYears === 'number' ? attempt.ageYears : undefined;
+  const legalAgeMin = typeof attempt.legalAgeMin === 'number' ? attempt.legalAgeMin : undefined;
+
+  return {
+    attemptId: attempt._id?.toString?.() ?? undefined,
+    status: attempt.status,
+    submittedAt: asIso(attempt.submittedAt),
+    reviewedAt: asIso(attempt.reviewedAt),
+    autoDecision: attempt.autoDecision,
+    autoDecisionReason: attempt.autoDecisionReason,
+    client: {
+      ocrText: attempt.clientOcrText,
+      dobRaw: attempt.clientDobRaw,
+      confidence: attempt.clientConfidence
+    },
+    server: {
+      ocrText: attempt.serverOcrText,
+      dobRaw: attempt.serverDobRaw,
+      confidence: attempt.serverConfidence
+    },
+    parsedDob: {
+      clientDobAD: asIso(attempt.clientDobAD),
+      serverDobAD: asIso(attempt.serverDobAD),
+      clientDobBS: attempt.clientDobBS,
+      serverDobBS: attempt.serverDobBS,
+      clientDobSource: attempt.clientDobSource,
+      serverDobSource: attempt.serverDobSource
+    },
+    interpretation: {
+      differenceDays,
+      toleranceDays,
+      withinTolerance: differenceDays !== undefined ? differenceDays <= toleranceDays : undefined,
+      parseConfidence: attempt.parseConfidence,
+      parseErrors: attempt.parseErrors ?? [],
+      clientParseErrors: attempt.clientParseErrors ?? [],
+      serverParseErrors: attempt.serverParseErrors ?? [],
+      legalAgeMin,
+      ageYears,
+      ageValid: ageYears !== undefined && legalAgeMin !== undefined ? ageYears >= legalAgeMin : undefined,
+      reviewRequired: attempt.status === 'pending',
+      reviewRequiredReason: attempt.autoDecisionReason
+    }
+  };
+}
+
 export function kycRouter() {
   const router = Router();
 
@@ -68,7 +128,8 @@ export function kycRouter() {
           data: {
             kycStatus: result.kycStatus,
             attemptId: result.attemptId,
-            autoDecision: result.autoDecision
+            autoDecision: result.autoDecision,
+            attemptSummary: toAttemptSummary(result.attempt)
           }
         });
 
@@ -91,7 +152,34 @@ export function kycRouter() {
 
       const lastAttemptId = user.kycLastAttemptId?.toString?.() ?? undefined;
       const attempt = lastAttemptId
-        ? await KycAttemptModel.findById(lastAttemptId).select({ submittedAt: 1, reviewedAt: 1 }).exec()
+        ? await KycAttemptModel.findById(lastAttemptId)
+            .select({
+              submittedAt: 1,
+              reviewedAt: 1,
+              status: 1,
+              autoDecision: 1,
+              autoDecisionReason: 1,
+              clientOcrText: 1,
+              clientDobRaw: 1,
+              clientConfidence: 1,
+              serverOcrText: 1,
+              serverDobRaw: 1,
+              serverConfidence: 1,
+              clientDobAD: 1,
+              serverDobAD: 1,
+              clientDobBS: 1,
+              serverDobBS: 1,
+              clientDobSource: 1,
+              serverDobSource: 1,
+              dobDifferenceDays: 1,
+              parseConfidence: 1,
+              parseErrors: 1,
+              clientParseErrors: 1,
+              serverParseErrors: 1,
+              legalAgeMin: 1,
+              ageYears: 1
+            })
+            .exec()
         : null;
 
       res.status(200).json({
@@ -101,7 +189,8 @@ export function kycRouter() {
           lastAttemptId,
           submittedAt: attempt?.submittedAt?.toISOString?.() ?? undefined,
           reviewedAt: attempt?.reviewedAt?.toISOString?.() ?? undefined,
-          rejectionReason: user.kycRejectionReason ?? undefined
+          rejectionReason: user.kycRejectionReason ?? undefined,
+          attemptSummary: toAttemptSummary(attempt)
         }
       });
     })

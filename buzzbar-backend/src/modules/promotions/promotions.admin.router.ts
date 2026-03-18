@@ -79,6 +79,20 @@ function isDuplicateCodeError(error: any) {
   return error?.code === 11000 && (error?.keyPattern?.code || error?.keyValue?.code);
 }
 
+async function ensurePromotionCodeAvailable(code: string, excludePromotionId?: mongoose.Types.ObjectId | string) {
+  const existing = await PromotionModel.findOne({ code })
+    .select('_id')
+    .exec();
+
+  if (!existing) return;
+
+  if (excludePromotionId && existing._id.toString() === excludePromotionId.toString()) {
+    return;
+  }
+
+  throw new ApiError(409, 'Promotion code already exists', { errorCode: 'PROMO_CODE_ALREADY_EXISTS' });
+}
+
 function parseDateInput(raw: string, bound: 'from' | 'to') {
   const trimmed = raw.trim();
   const parsed = new Date(trimmed);
@@ -515,6 +529,7 @@ export function promotionsAdminRouter() {
 
       try {
         const payload = buildWritePayload(parsed.data);
+        await ensurePromotionCodeAvailable(payload.code);
         const promotion = await PromotionModel.create(payload as any);
         res.status(201).json({
           success: true,
@@ -549,6 +564,7 @@ export function promotionsAdminRouter() {
 
       try {
         const payload = buildWritePayload(parsed.data);
+        await ensurePromotionCodeAvailable(payload.code, promotion._id);
         promotion.code = payload.code;
         promotion.title = payload.title;
         promotion.description = payload.description;

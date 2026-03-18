@@ -10,9 +10,27 @@ import { createLogger } from '../../config/logger.js';
 const execFileAsync = promisify(execFile);
 const log = createLogger();
 let loggedTesseractUnavailable = false;
+let loggedTesseractTimeout = false;
 
 export interface OcrProvider {
   recognize(opts: { buffer: Buffer; filename?: string }): Promise<OcrResult>;
+}
+
+function getOcrLanguages() {
+  const value = (process.env.KYC_OCR_LANGS ?? 'eng+nep').trim();
+  return value || 'eng+nep';
+}
+
+function getOcrPageSegmentationMode() {
+  const raw = Number(process.env.KYC_OCR_PSM ?? '6');
+  if (!Number.isFinite(raw) || raw <= 0) return '6';
+  return String(Math.round(raw));
+}
+
+function getOcrTimeoutMs() {
+  const raw = Number(process.env.KYC_OCR_TIMEOUT_MS ?? '5000');
+  if (!Number.isFinite(raw) || raw <= 0) return 5000;
+  return Math.round(raw);
 }
 
 function clamp01(n: number) {
@@ -85,14 +103,23 @@ export class TesseractOcrProvider implements OcrProvider {
 
     await fs.writeFile(file, opts.buffer);
     try {
-      const { stdout } = await execFileAsync('tesseract', [file, 'stdout', '-l', 'eng', '--psm', '6', 'tsv'], {
-        maxBuffer: 10 * 1024 * 1024
-      });
+      const { stdout } = await execFileAsync(
+        'tesseract',
+        [file, 'stdout', '-l', getOcrLanguages(), '--psm', getOcrPageSegmentationMode(), 'tsv'],
+        {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: getOcrTimeoutMs()
+        }
+      );
       return parseTesseractTsv(stdout);
     } catch (err: any) {
       if (err?.code === 'ENOENT' && !loggedTesseractUnavailable) {
         loggedTesseractUnavailable = true;
         log.warn({ reason: 'OCR_UNAVAILABLE' }, 'tesseract CLI not found; server OCR will be skipped');
+      }
+      if ((err?.killed || err?.signal === 'SIGTERM' || err?.code === 'ETIMEDOUT') && !loggedTesseractTimeout) {
+        loggedTesseractTimeout = true;
+        log.warn({ reason: 'OCR_TIMEOUT', timeoutMs: getOcrTimeoutMs() }, 'tesseract OCR timed out; server OCR will be skipped');
       }
       return { text: '', confidence: 0 };
     } finally {

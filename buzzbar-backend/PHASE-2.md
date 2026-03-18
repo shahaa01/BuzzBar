@@ -1,1375 +1,636 @@
-# BuzzBar Admin Web Panel — Phase 2 Specification
+# BuzzBar Admin Panel — Final Phase 2 Implementation
 
-## 1. Purpose
+## Status
 
-The BuzzBar Admin Web Panel is the **operational control center** for the entire business. It is not a lightweight dashboard or a temporary CRUD layer. It must be a polished, high-trust, high-efficiency internal product that supports the daily workflows of:
+Phase 2 is implemented and closed.
 
-* SuperAdmin
-* Admin
-* Employee
+This document records what was actually delivered across the admin panel and the supporting Phase 2 backend/admin contracts.
 
-It must sit on top of the completed Phase 1 ( You can find in @README.md and in /docs/openapi.yaml ) backend and expose all operational power in a clear, modern, fast, and reliable interface.
+Related source documents:
 
-The panel should feel:
-
-* premium
-* clean
-* decisive
-* modern
-* calm under pressure
-* operationally efficient
-
-It should not look like a generic bootstrap dashboard or “AI-generated admin template.”
+- `buzzbar-backend/PHASE-2.md`
+- `buzzbar-backend/docs/openapi.yaml`
+- `buzzbar-admin/`
 
 ---
 
-## 2. Phase 2 Goal
+## Repos and Runtime
 
-Build a production-grade React admin panel that fully operates BuzzBar’s Phase 1 backend and makes internal business workflows smooth, auditable, and scalable.
+### Admin app
 
-At the end of Phase 2, the team should be able to:
+- Location: `buzzbar-admin/`
+- Stack:
+  - React
+  - TypeScript
+  - Vite
+  - React Router
+  - TanStack Query
+  - Axios
+  - Tailwind CSS
+  - shadcn/Radix-style UI primitives
+  - React Hook Form
+  - Zod
+  - Zustand
+  - Sonner
 
-* log in as admin roles
-* configure business settings
-* manage catalog, variants, images, and inventory
-* review and decide KYC submissions
-* manage promotions
-* monitor and operate orders
-* inspect payment records
-* handle wallet mock flows for testing
-* support internal QA and operational dry-runs
+### Backend
 
-This panel should be sufficient for:
-
-* staging usage
-* internal operations
-* pre-launch dry runs
-* launch-day administration
-
----
-
-## 3. Product Principles
-
-### 3.1 No lazy-MVP quality
-
-The admin panel must not be a shallow wrapper over APIs. It should include:
-
-* thoughtful workflows
-* validation and safeguards
-* useful tables and filters
-* detail drawers/pages
-* bulk actions where operationally important
-* clean information hierarchy
-* proper empty states, loading states, and error states
-
-### 3.2 High-trust UI
-
-Admins are making consequential decisions:
-
-* approving KYC
-* adjusting inventory
-* confirming orders
-* cancelling orders
-* changing business settings
-
-The interface should always make consequences obvious.
-
-### 3.3 Fast operations
-
-Common actions should take minimal clicks.
-Examples:
-
-* adjust stock quickly
-* approve KYC fast
-* find orders instantly
-* detect stalled wallet orders
-* identify low-stock products
-
-### 3.4 Clear separation between display and action
-
-The UI should never blur read-only information with destructive or state-changing actions.
-
-### 3.5 Audit-friendly
-
-Operationally meaningful actions should surface relevant metadata:
-
-* who changed it
-* when it changed
-* what changed
+- Location: `buzzbar-backend/`
+- Phase 2 work reused and extended the Phase 1 backend/admin APIs
+- OpenAPI contract maintained in:
+  - `buzzbar-backend/docs/openapi.yaml`
 
 ---
 
-## 4. Roles and Permissions
+## Phase 2 Delivery Summary
 
-The UI must respect backend RBAC exactly.
+### 2A — Foundation + Design System + Auth
 
-### 4.1 SuperAdmin
+Delivered:
 
-Full access.
-Can:
+- New admin app in `buzzbar-admin/`
+- Dark-only admin shell
+- Typed API client foundation
+- Admin login
+- Access-token-in-memory + refresh-token-in-localStorage session model
+- Refresh rotation bootstrap on load
+- Logout with refresh-session revocation support
+- Protected routes
+- Capability-based navigation and guards
+- Shared UI primitives:
+  - skeleton
+  - empty state
+  - error state
+  - confirm dialog
+  - status badges
 
-* manage settings
-* manage admins/employees 
-* perform all catalog/inventory/order/KYC/promo actions
-* access sensitive operational views
+### 2B — Dashboard + Settings + KYC + Inventory + Operational Admin Foundations
 
-### 4.2 Admin
+Delivered:
 
-High-level operational access.
-Can:
+- Admin dashboard summary view
+- Settings view/edit split by capability
+- KYC queue
+- KYC review detail
+- Deterministic latest-attempt KYC detail resolution via `user.kycLastAttemptId`
+- Inventory stock view
+- Inventory adjustment flow
+- Inventory movement history with filters
+- Promotions read foundation
+- Admin order detail action-read model foundation
 
-* manage catalog
-* manage inventory
-* review KYC
-* manage orders
-* manage promos
-* view settings
-* edit only allowed settings if backend/super-admin permits
+### 2C — Catalog + Uploads + Stock Signal
 
-### 4.3 Employee
+Delivered:
 
-Operationally constrained role.
-Can typically:
+- Categories CRUD
+- Brands CRUD
+- Category image support
+- Brand logo upload/clear/delete-from-Cloudinary flow
+- Products CRUD
+- Variants CRUD
+- Product image gallery upload/reorder/remove/delete flow
+- Stock-status signal on products list
+- Soft-delete protection for category/brand in use
+- Standardized admin response shape for catalog admin routes
+- Employee read-only product visibility
 
-* review KYC if backend allows
-* view orders
-* assign or update order workflows if backend/super-admin allows
-* inspect catalog/inventory
-* perform limited actions only
+### 2D — Orders + Payments
 
-### 4.4 UI behavior
+Delivered:
 
-Permissions should be enforced in three layers:
+- Orders list foundation
+- Order detail operational read model
+- Backend-driven transition engine
+- Assignment / reassign / unassign workflow
+- Assignment audit history
+- Delivery-age-check order policy replacing new-order KYC hold behavior
+- Manual account verification flow for KYC-clearing operations
+- Rider-reported age-verification failure flow with delivery-stage guard
+- Payments list
+- Payment detail
+- Mock-wallet lifecycle inspection
+- Orders ↔ Payments cross-navigation
+- OpenAPI hardening for orders/payments admin operations
 
-1. route access
-2. page section visibility
-3. action button visibility/disable states
+### 2E — Promotions + Role Tightening + QoL + Final Hardening
 
-The UI should never assume a permission based only on role labels. It must follow the backend contract.
+Delivered:
 
----
-
-## 5. Tech Stack
-
-### 5.1 Frontend stack
-
-Recommended:
-
-* React
-* TypeScript
-* Vite
-* React Router
-* TanStack Query
-* Tailwind CSS
-* shadcn/ui or a similarly clean component system
-* React Hook Form
-* Zod
-* Zustand or Context only where useful for UI state
-* Axios or fetch wrapper
-* Recharts for charts
-
-### 5.2 Why this stack
-
-This stack supports:
-
-* speed of development
-* strong typing
-* scalable state/query separation
-* modern and clean UI composition
-* better long-term maintainability
-
-### 5.3 Project structure
-
-Recommended:
-
-```txt
-buzzbar-admin/
-  src/
-    app/
-    routes/
-    layouts/
-    components/
-      ui/
-      tables/
-      forms/
-      status/
-      feedback/
-    features/
-      auth/
-      dashboard/
-      settings/
-      catalog/
-      inventory/
-      kyc/
-      orders/
-      promotions/
-      payments/
-      uploads/
-    lib/
-      api/
-      auth/
-      utils/
-      constants/
-      permissions/
-    hooks/
-    styles/
-    types/
-```
-
-### 5.4 Architectural rule
-
-Use **feature-first organization**. Do not dump everything into shared folders too early.
+- Promotions list
+- Promotion create/edit
+- Promotion detail read-model / trust view
+- Capability audit and tightening across the app
+- Saved filters for operational modules
+- Final UX/reliability hardening
+- Route-level lazy loading and better build chunking
+- Final validation pass
 
 ---
 
-## 6. Design Direction
+## Implemented Modules
 
-### 6.1 Visual tone
+## Authentication
 
-The admin panel should not be dull, corporate-grey, or template-like.
-It should feel premium and intentional.
+Implemented in:
 
-### 6.2 Color direction
+- `buzzbar-admin/src/features/auth/`
+- `buzzbar-admin/src/lib/auth/`
+- `buzzbar-admin/src/lib/api/`
 
-Use a restrained, elegant system with subtle gradients and strong readability.
+Delivered behavior:
 
-Suggested base palette:
+- Admin login against backend admin auth
+- Session bootstrap via refresh token
+- Access token held in memory
+- Refresh token held in local storage
+- Logout revokes refresh session
+- Unauthorized users are redirected
+- Capability-based landing route
 
-* Background: warm charcoal / soft slate / deep neutral
-* Surface: clean off-white or near-black depending on theme strategy
-* Accent: refined amber, soft wine, or premium copper notes
-* Success: clean green
-* Warning: amber
-* Danger: deep red
-* Info: cool blue-grey
+Operational notes:
 
-### 6.3 Gradient direction
+- Role and identity truth comes from decoded access token claims
+- Local storage profile is display-only, not authorization truth
 
-Gradients should be subtle, not neon.
-Examples of acceptable visual feeling:
+## Dashboard
 
-* charcoal to graphite
-* muted plum to deep slate
-* warm bronze to dark neutral
-* soft amber glow on key summary cards
+Implemented in:
 
-Avoid:
+- `buzzbar-admin/src/features/dashboard/DashboardPage.tsx`
 
-* loud purple-pink startup gradients
-* shiny “crypto dashboard” look
-* over-saturated blues
-* generic template colors
+Delivered behavior:
 
-### 6.4 Typography
+- Summary metrics
+- Operational queue cards
+- KYC pending visibility
+- Low stock visibility
+- Wallet pending visibility
+- Capability-aware deep links
+- Disabled future links where modules were not meant to be used from a card
 
-Use a serious, highly legible sans-serif system.
+## Settings
 
-### 6.5 Layout feel
+Implemented in:
 
-The UI should feel structured and breathable:
+- `buzzbar-admin/src/features/settings/SettingsPage.tsx`
 
-* generous spacing
-* crisp card hierarchy
-* strong tables
-* restrained shadows
-* rounded but not toy-like corners
-* polished hover/focus states
+Delivered behavior:
 
-### 6.6 Motion
+- View settings for users with `settings_read`
+- Edit only for users with `settings_write`
+- Confirmation-based save flow
+- Business-rule sections aligned to backend settings model
 
-Motion should be subtle and useful:
+## KYC
 
-* smooth drawer transitions
-* refined page transitions
-* soft loading skeletons
-* table row highlight feedback
-* success/error feedback without visual chaos
+Implemented in:
+
+- `buzzbar-admin/src/features/kyc/`
+
+Delivered behavior:
+
+- Queue with filters and saved views
+- Latest attempt review page
+- OCR comparison visibility
+- Signed image access flow
+- Approve/reject actions
+- Manual verify action with required note
+- Review context and attempt history visibility
+
+Backend/admin support delivered:
+
+- Deterministic current attempt resolution from `user.kycLastAttemptId`
+- Queue and detail contracts documented and tested
+- KYC approve/manual verify clears active order age-check flags
+- KYC reject blocks open orders instead of auto-cancelling them
+
+## Catalog
+
+Implemented in:
+
+- `buzzbar-admin/src/features/catalog/`
+- `buzzbar-backend/src/modules/catalog/`
+
+Delivered behavior:
+
+- Categories:
+  - list
+  - create/edit
+  - deactivate
+  - image support
+- Brands:
+  - list
+  - create/edit
+  - deactivate
+  - logo upload / clear / destroy
+- Products:
+  - list
+  - detail/edit
+  - create
+  - deactivate
+  - gallery uploads
+  - gallery reorder
+  - variant preview / detail workflows
+- Variants:
+  - create
+  - edit
+  - deactivate
+
+Delivered model expansions:
+
+- Product:
+  - `countryOfOrigin`
+  - `productType`
+  - `subcategory`
+  - `ingredients`
+  - `servingSuggestion`
+  - `agingInfo`
+  - `authenticityNote`
+  - `shortDescription`
+  - `tags`
+- Variant:
+  - `label`
+
+Normalization rules implemented:
+
+- Product tags are normalized on write:
+  - trim
+  - lowercase
+  - dedupe
+  - drop empty
+
+Catalog integrity rules delivered:
+
+- Category deactivation blocked when referenced by products
+- Brand deactivation blocked when referenced by products
+- Duplicate slug and SKU handling
+- Product inactive → variant activation prevented
+
+## Inventory
+
+Implemented in:
+
+- `buzzbar-admin/src/features/inventory/`
+
+Delivered behavior:
+
+- Stock view
+- SKU/product search
+- Inventory adjustment dialog
+- Required reason on adjustment
+- History tab for admin/superadmin
+- Filters for actor, date, type, search
+- Stock availability visibility
+
+Backend/admin support delivered:
+
+- Movement history endpoint
+- Quantity before/after on movement records
+- Actor and timestamp visibility
+
+## Orders
+
+Implemented in:
+
+- `buzzbar-admin/src/features/orders/`
+- `buzzbar-backend/src/modules/orders/`
+
+Delivered behavior:
+
+- Orders list
+- Order detail
+- Backend-driven allowed actions
+- Status transitions by action ID
+- Assignment
+- Reassignment
+- Unassign
+- Stored `deliveryAgeCheckRequired` snapshot on orders
+- `progressBlockedReason = KYC_REQUIRED` for rejected-account orders
+- Manual verification and age-failure operations surfaced in admin UI
+- Delivery ID check and KYC-required badges in list/detail views
+- KYC/payment/stock gate visibility
+- Audit visibility
+- Cross-linking to payments
+
+Transition model delivered:
+
+- UI does not invent transitions
+- Backend computes `allowedActions`
+- Invalid transitions are rejected by backend rules
+- Legacy `/status` compatibility wrapper kept but deprecated
+- `not_started` and `pending` accounts can create and progress orders normally
+- `rejected` accounts can create orders, but forward progression is blocked until verification clears
+- Rider age-verification failure is only allowed from `OUT_FOR_DELIVERY`
+- Already verified accounts are not downgraded by rider-failure handling
+
+## Payments
+
+Implemented in:
+
+- `buzzbar-admin/src/features/payments/`
+- `buzzbar-backend/src/modules/payments/`
+
+Delivered behavior:
+
+- Payments list with server-side filters/sort/paging
+- Payment detail read model
+- Request/response payload inspection
+- Provider reference visibility
+- Failure-reason visibility
+- Linked order and user visibility
+- Mock lifecycle timeline / diagnostics
+- Cross-linking back to orders
+
+## Promotions
+
+Implemented in:
+
+- `buzzbar-admin/src/features/promotions/`
+- `buzzbar-backend/src/modules/promotions/`
+
+Delivered behavior:
+
+- Promotions list
+- Promotion detail
+- Promotion create/edit
+- Promotion deactivate
+- Readable rule summary
+- Validation warnings
+- Usage visibility
+- Eligibility summary
+- Operator trust/read-model sections
 
 ---
 
-## 7. Core Layout System
+## Capability Model Implemented
 
-### 7.1 App shell
+Central capability matrix:
 
-The panel should have:
+- File: `buzzbar-admin/src/lib/permissions/capabilities.ts`
 
-* left sidebar navigation
-* top header
-* content area
-* optional right-side contextual panel or slide-over
+Implemented capabilities:
 
-### 7.2 Header
+- `orders`
+- `orders_transition`
+- `orders_assign`
+- `kyc`
+- `inventory_edit`
+- `inventory_history`
+- `promotions_read`
+- `promotions_manage`
+- `catalog_products_read`
+- `catalog`
+- `uploads`
+- `payments_read`
+- `dashboard`
+- `settings_read`
+- `settings_write`
 
-Header should include:
+Delivered role mapping:
 
-* page title
-* contextual actions
-* global search trigger
-* notifications/activity entry point
-* user menu
+### Employee
 
-### 7.3 Sidebar
+- Orders view
+- Backend-allowed order transitions
+- KYC access
+- Inventory edit
+- Promotions read
+- Catalog products read
 
-Primary nav:
+### Admin
 
-* Dashboard
-* Orders
-* KYC
-* Catalog
-* Inventory
-* Promotions
-* Payments
-* Settings
+- Everything employee can do, plus:
+  - orders assignment
+  - promotions management
+  - dashboard
+  - payments read
+  - catalog management
+  - uploads
+  - settings read
+  - inventory history
 
-Optional later:
+### SuperAdmin
 
-* Admin Users
-* Delivery Operations
-* Analytics
-* Audit Logs
+- Everything admin can do, plus:
+  - settings write
 
-### 7.4 Secondary layout tools
+Enforcement delivered in three layers:
 
-Use:
+- route guards
+- page/section visibility
+- button/action visibility
 
-* tabs within feature areas
-* filters row above tables
-* details drawer for quick inspection
-* full-page detail for complex workflows
-
----
-
-## 8. Global Admin Capabilities
-
-These patterns should exist across the panel.
-
-### 8.1 Global search
-
-Search should let admins quickly find:
-
-* order number
-* product name
-* SKU
-* user email
-* KYC user
-* promo code
-
-### 8.2 Filters and saved views
-
-Major list pages should support:
-
-* filtering
-* sorting
-* pagination
-* column visibility
-* saved filter presets if feasible
-
-### 8.3 Bulk actions
-
-Where useful:
-
-* bulk activate/deactivate products
-* bulk inventory export/import later
-* bulk promo deactivation later
-
-Do not force bulk actions where unsafe.
-
-### 8.4 Loading states
-
-Every major page must support:
-
-* skeleton states
-* empty states
-* inline refresh states
-* non-blocking mutation progress indicators
-
-### 8.5 Error handling
-
-Errors must be human-readable and operation-aware.
-Examples:
-
-* duplicate SKU
-* out of stock
-* invalid transition
-* KYC signed URL fetch failure
-* Cloudinary misconfiguration
-
-### 8.6 Confirmation patterns
-
-Require confirmation for:
-
-* cancel order
-* reject KYC
-* destructive catalog changes
-* inventory negative adjustments
-* settings changes with business impact
-
-### 8.7 Activity and audit visibility
-
-At minimum, important pages should surface relevant audit metadata.
-Example:
-
-* who adjusted stock
-* who approved KYC
-* who changed settings
+No scattered raw role checks are meant to be the authorization source of truth.
 
 ---
 
-## 9. Feature Modules
+## Backend/Admin Contracts Added or Tightened in Phase 2
 
-# 9.1 Authentication Module
+The following backend/admin surfaces were added or materially tightened during Phase 2:
 
-## Purpose
+- Admin dashboard summary endpoint
+- Deterministic KYC latest-attempt detail
+- Inventory movements endpoint and adjustment audit context
+- Admin promotions list/detail/create/update/deactivate contracts
+- Admin catalog GET list/detail contracts
+- Soft-delete protection for category/brand in use
+- Products list stock-status signal
+- Orders admin list filtering/search/read model improvements
+- Orders admin detail read model
+- Orders transition endpoint by action ID
+- Orders assignment / unassign endpoints and audit history
+- Orders delivery-age-check fields and progression-block reason
+- Admin KYC manual verification endpoint
+- Admin order age-verification-failed endpoint
+- Admin payments list/detail read models
+- Mock payment lifecycle diagnostics in admin detail
+- OpenAPI coverage for admin flows
 
-Secure admin access to the panel.
+Response-shape discipline:
 
-## Backend dependencies
-
-Uses Phase 1 admin auth:
-
-* login
-* refresh
-* logout
-* RBAC middleware
-
-## Pages / flows
-
-* Admin login page
-* session refresh handling
-* logout handling
-* unauthorized page
-* session expiry handling
-
-## Requirements
-
-* secure token storage strategy for admin panel
-* protected routes
-* role-aware navigation rendering
-* graceful refresh failure handling
-* redirect to login on expired auth
-
-## Login page requirements
-
-* premium and minimal design
-* email
-* password
-* error messaging
-* loading feedback
+- Admin endpoints standardized around:
+  - `{ success: true, data: ... }`
+- Errors consistently include:
+  - `errorCode`
+  - `message`
+  - `requestId`
 
 ---
 
-# 9.2 Dashboard Module
+## Saved Filters and QoL Upgrades
 
-## Purpose
+Implemented saved filters for:
 
-Provide a true operational overview, not vanity metrics.
+- KYC queue
+- Inventory
+- Orders
+- Payments
+- Promotions
 
-## Dashboard contents
+Delivered saved-filter behavior:
 
-### 1. Top metrics
+- save current filter set
+- update saved filter
+- delete saved filter
+- set default saved filter
+- recall saved filter
+- private per admin account
 
-* total orders today
-* orders pending review
-* KYC pending count
-* low stock count
-* active promos count
-* wallet pending count
+Additional QoL delivered:
 
-### 2. Order health cards
-
-* created
-* KYC pending review
-* confirmed
-* packing
-* out for delivery
-* cancelled
-
-### 3. KYC queue snapshot
-
-* number pending
-* oldest pending wait time
-* quick action to review queue
-
-### 4. Inventory alerts
-
-* low stock variants
-* zero stock variants
-* recently adjusted variants
-
-### 5. Payment health
-
-* pending wallet orders
-* failed wallet confirmations
-* stale wallet cleanup stats if exposed
-
-### 6. Quick actions
-
-* add product
-* adjust inventory
-* review KYC
-* create promo
-* change settings
-
-## Dashboard behavior
-
-* should load fast
-* should use summary endpoints or aggregated fetches if possible
-* should not overfetch heavy tables
+- copy actions for IDs/codes/references
+- querystring-driven tables
+- state preserved on list → detail → back
+- sticky headers on operational tables where useful
+- consistent refresh/reset patterns
+- empty-state recovery actions
+- copyable `errorCode` and `requestId`
 
 ---
 
-# 9.3 Orders Module
+## Reliability and UX Hardening Delivered
 
-## Purpose
+Final hardening included:
 
-Operate the full order lifecycle from Phase 1 backend.
+- route-level lazy loading
+- suspense fallbacks
+- reduced build chunk issues
+- cleanup of unstable catalog form state
+- upload-state hardening for product media
+- consistent confirmation flows
+- shared error state with copyable diagnostics
+- safer saved-filter naming and recall behavior
 
-## Backend dependencies
+No fake unsupported workflows were intentionally added.
 
-Uses Phase 1 orders module:
+Examples of deliberately constrained behavior:
 
-* customer orders
-* admin order list
-* order status updates
-* assign flow
-* KYC_PENDING_REVIEW
-* paymentMethod/paymentStatus separation
-* stock reservation lifecycle
-
-## Pages
-
-* Orders List
-* Order Detail
-* Assignment workflow
-* Status update workflow
-
-## Orders List requirements
-
-Columns should include:
-
-* order number
-* customer
-* created time
-* order status
-* payment method
-* payment status
-* KYC status snapshot
-* total
-* delivery area
-* assigned staff/delivery person
-
-Filters:
-
-* status
-* payment method
-* payment status
-* KYC status
-* date range
-* assigned/unassigned
-* service area
-* search by order number/customer
-
-Quick actions:
-
-* open detail
-* assign
-* update status
-* cancel order if eligible
-
-## Order Detail page
-
-Must include:
-
-### 1. Overview
-
-* order number
-* timestamps
-* status badges
-* payment method/status
-* KYC snapshot
-
-### 2. Customer section
-
-* user identity
-* contact info if available
-* address snapshot
-
-### 3. Item snapshot section
-
-* product image
-* product name
-* brand
-* variant details
-* unit price snapshot
-* quantity
-* line total
-
-### 4. Totals section
-
-* subtotal
-* discount
-* delivery fee
-* total
-* promo snapshot
-
-### 5. Operational section
-
-* current status
-* allowed next transitions
-* assigned operator
-* notes placeholder if added later
-
-### 6. Payment section
-
-* COD / WALLET
-* payment status
-* linked payment transaction if exists
-
-### 7. Inventory effect section
-
-* whether stock is reserved
-* whether stock committed
-
-### 8. KYC gate section
-
-* verified / pending / rejected snapshot
-* if pending, show clearly why order is blocked from progress
-
-## Status transition UX
-
-The UI must not show all statuses as dropdown freeform.
-It should only show **valid next actions**.
-
-Example buttons:
-
-* Confirm Order
-* Move to Packing
-* Mark Ready for Dispatch
-* Mark Out for Delivery
-* Mark Delivered
-* Cancel Order
-
-## Assignment UX
-
-* assign to employee or placeholder delivery assignee
-* show who assigned and when
+- no fake team-management CRUD
+- no fake payment repair actions
+- no fake unsupported promo duplicate flow
 
 ---
 
-# 9.4 KYC Module
+## Testing and Validation
 
-## Purpose
+### Backend test coverage added during Phase 2
 
-Efficiently review and decide Phase 1 KYC submissions with full visibility into client OCR, server OCR, Cloudinary private image access, and decision reasons.
+Key test files:
 
-## Backend dependencies
+- `buzzbar-backend/src/p2_2b_dashboard_summary.test.ts`
+- `buzzbar-backend/src/p2_2b_kyc_latest_attempt_deterministic.test.ts`
+- `buzzbar-backend/src/p2_2b_inventory_adjust_requires_reason_and_records_actor.test.ts`
+- `buzzbar-backend/src/p2_2b_inventory_movements_filters.test.ts`
+- `buzzbar-backend/src/p2_2b_orders_admin_detail_actions.test.ts`
+- `buzzbar-backend/src/p2_2b_promotions_admin_list.test.ts`
+- `buzzbar-backend/src/p2_2b_payments_rbac.test.ts`
+- `buzzbar-backend/src/p2_2c_categories_brands_admin_list_and_detail.test.ts`
+- `buzzbar-backend/src/p2_2c_soft_delete_protection_brand_category_in_use.test.ts`
+- `buzzbar-backend/src/p2_2c_products_admin_list_stock_status.test.ts`
+- `buzzbar-backend/src/p2_2c_duplicate_slug_and_sku_error_codes.test.ts`
+- `buzzbar-backend/src/admin_brands_logo_nullable.test.ts`
+- `buzzbar-backend/src/admin_categories_image_nullable.test.ts`
+- `buzzbar-backend/src/uploads_image_rejects_bad_mime_and_size.test.ts`
+- `buzzbar-backend/src/admin_products_crud_and_variants.test.ts`
+- `buzzbar-backend/src/admin_products_images_limit_and_persist_order.test.ts`
+- `buzzbar-backend/src/admin_variant_validation.test.ts`
+- `buzzbar-backend/src/admin_order_detail_read_model.test.ts`
+- `buzzbar-backend/src/admin_order_transitions.test.ts`
+- `buzzbar-backend/src/admin_order_assignment.test.ts`
+- `buzzbar-backend/src/admin_kyc_delivery_age_policy.test.ts`
+- `buzzbar-backend/src/admin_payments_list.test.ts`
+- `buzzbar-backend/src/admin_payment_detail.test.ts`
+- `buzzbar-backend/src/admin_promotions_write.test.ts`
+- `buzzbar-backend/src/admin_promotion_detail.test.ts`
+- `buzzbar-backend/src/admin_product_metadata_normalization.test.ts`
 
-Uses Phase 1 KYC module:
+### Validation command set
 
-* queue
-* status
-* approve
-* reject
-* signed Cloudinary URLs
-* superseded attempts filtering
-* AND gate results
-* 90-day tolerance logic
-* never-auto-reject policy
+Backend:
 
-## Pages
+- `npm run typecheck`
+- `npm run lint`
+- `npm test`
 
-* KYC Queue
-* KYC Review Detail
+Admin:
 
-## KYC Queue requirements
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
 
-Columns:
+Web test UI:
 
-* user
-* submitted time
-* current status
-* auto decision
-* client confidence
-* server confidence
-* suspected issue type
-* age result summary
+- `npm run typecheck`
+- `npm run build`
 
-Filters:
-
-* pending
-* rejected
-* verified if needed
-* date range
-* low confidence
-* OCR mismatch
-* underage-flagged
-
-## KYC Review Detail
-
-Must be one of the strongest pages in the panel.
-
-### Required sections
-
-#### 1. Submission summary
-
-* user
-* attempt id
-* submitted time
-* current status
-* review status
-
-#### 2. Images
-
-* front image
-* back image
-* selfie if present
-* signed URLs valid for short duration
-* image zoom/pan support ideally
-
-#### 3. OCR comparison
-
-Side-by-side display:
-
-* client OCR text
-* server OCR text
-* client detected DOB
-* server detected DOB
-* DOB difference days
-* confidence values
-
-#### 4. Parsing outcome
-
-* AD / BS source
-* parsed canonical DOB
-* parse errors
-* age result
-* tolerance result
-* auto decision reason
-
-#### 5. Action area
-
-* Approve
-* Reject
-* required reason on reject
-* confirmation modal
-
-#### 6. Audit context
-
-* previous attempts
-* superseded attempts count
-* who reviewed if already reviewed
-
-## KYC UX principles
-
-* must feel high-trust and deliberate
-* approval/rejection should never feel casual
-* underage indicators must be obvious
-* superseded attempts must not clutter the queue
+This command set was used repeatedly during Phase 2 delivery and final hardening.
 
 ---
 
-# 9.5 Catalog Module
+## Current Route Surface
 
-## Purpose
+Primary admin routes implemented:
 
-Manage categories, brands, products, variants, and images using the exact model structure built in Phase 1.
+- `/login`
+- `/`
+- `/dashboard`
+- `/orders`
+- `/orders/:id`
+- `/kyc`
+- `/kyc/:userId`
+- `/inventory`
+- `/payments`
+- `/payments/:id`
+- `/catalog/products`
+- `/catalog/products/new`
+- `/catalog/products/:id`
+- `/catalog/categories`
+- `/catalog/brands`
+- `/settings`
+- `/promotions`
+- `/promotions/new`
+- `/promotions/:id`
 
-## Backend dependencies
+Main route configuration:
 
-Uses Phase 1 catalog + Cloudinary upload endpoints.
-
-## Pages
-
-* Categories List
-* Category Create/Edit
-* Brands List
-* Brand Create/Edit
-* Products List
-* Product Create/Edit
-* Product Detail / Variant Management
-
-## Catalog requirements
-
-### Categories
-
-Functions:
-
-* create category
-* edit category
-* activate/deactivate
-* set sort order
-* upload image if supported later
-
-### Brands
-
-Functions:
-
-* create brand
-* edit brand
-* upload logo/image
-* activate/deactivate
-
-### Products
-
-Functions:
-
-* create product
-* edit product
-* soft delete/deactivate
-* manage slug carefully
-* set brand/category
-* set ABV
-* description
-* isActive state
-* upload/manage multiple images via Cloudinary
-
-### Variants
-
-Functions:
-
-* add variant
-* edit variant
-* deactivate variant
-* manage SKU
-* volumeMl
-* packSize
-* price
-* MRP if used
-
-## Products list page
-
-Columns:
-
-* image
-* name
-* brand
-* category
-* active state
-* ABV
-* variants count
-* availability summary
-
-Filters:
-
-* category
-* brand
-* active/inactive
-* low stock presence
-* search by product name or slug
-
-## Product detail page
-
-Should include:
-
-* product hero section
-* image gallery manager
-* metadata form
-* variants table
-* inventory summary per variant
-* links to inventory adjustments
-
-## Cloudinary upload UX
-
-* drag/drop and click upload
-* upload progress
-* thumbnail preview
-* reorder images if feasible
-* remove image action
-* safe cleanup behavior
+- `buzzbar-admin/src/app/router.tsx`
 
 ---
 
-# 9.6 Inventory Module
+## Known Deliberate Non-Scope / Deferred Items
 
-## Purpose
+These are intentionally not part of completed Phase 2:
 
-Operate stock precisely and confidently.
+- Admin user/team CRUD module
+- Real wallet-provider operational controls beyond existing mock/payment inspection
+- Fake unsupported backend actions
+- Search-keyword persistence on products
+- Per-variant currency support
 
-## Backend dependencies
-
-Uses Phase 1 inventory stock + movements model.
-
-## Pages
-
-* Inventory Overview
-* Variant Inventory Detail
-* Adjustment Modal / Page
-* Movement History
-
-## Inventory Overview requirements
-
-Columns:
-
-* product
-* variant SKU
-* volume/pack
-* quantity
-* reserved
-* available
-* last updated
-
-Filters:
-
-* low stock
-* out of stock
-* brand
-* category
-* product search
-* SKU search
-
-## Core actions
-
-* adjust stock
-* receive stock
-* inspect movement history
-
-## Adjustment UX
-
-Must clearly separate:
-
-* positive adjustments
-* negative adjustments
-* reason entry
-* actor visibility
-
-Prevent dangerous ambiguity.
-
-## Movement history
-
-Show:
-
-* movement type
-* delta
-* resulting quantity if available
-* actor
-* timestamp
-* reason
-
-## Inventory alerting UI
-
-* low stock warning chips
-* out-of-stock indicators
-* reserved-heavy warning if available is low
+These were deferred to avoid model drift or fake UI capability.
 
 ---
 
-# 9.7 Promotions Module
-
-## Purpose
-
-Manage promo rules built in Phase 1 and validate them against business rules.
-
-## Backend dependencies
-
-Uses promotions + promo usage rules.
-
-## Pages
-
-* Promotions List
-* Create Promotion
-* Edit Promotion
-* Promotion Detail / Usage View
-
-## Promo management requirements
-
-Fields supported:
-
-* code
-* active/inactive
-* type
-* value
-* min subtotal
-* max discount
-* startAt
-* endAt
-* usageLimitTotal
-* usageLimitPerUser
-* eligible categories
-* eligible brands
-* eligible products
-* exclude discounted items
-
-## Promotions List
-
-Columns:
-
-* code
-* type
-* value
-* active state
-* date window
-* total usage cap
-* per-user cap
-* current usage if available
-
-Filters:
-
-* active/inactive
-* expired
-* scheduled
-* code search
-
-## Promo detail
-
-* full rule summary
-* current eligibility footprint
-* usage insight if available
-* deactivate action
-
-## UX requirements
-
-* promo math explanation preview
-* validation feedback before saving
-* easy distinction between flat vs percent
-
----
-
-# 9.8 Payments Module
-
-## Purpose
-
-Inspect payment state and mock wallet flows from Phase 1.
-
-## Backend dependencies
-
-Uses Phase 1 payment core:
-
-* payment transactions
-* mock provider
-* init/confirm
-* provider abstraction
-* unsupported provider handling
-
-## Pages
-
-* Payments List
-* Payment Transaction Detail
-
-## Payments List requirements
-
-Columns:
-
-* transaction id
-* order number
-* user
-* provider
-* payment method
-* status
-* amount
-* created time
-
-Filters:
-
-* provider
-* status
-* payment method
-* date range
-* order search
-
-## Payment detail
-
-Show:
-
-* raw normalized request snapshot
-* response snapshot
-* provider reference
-* failure reason
-* associated order
-* associated user
-
-## Mock payment support UX
-
-Optional internal tool:
-
-* view mock transaction lifecycle
-* quickly inspect success/failure path behavior
-
-This is mostly for internal QA and engineering support.
-
----
-
-# 9.9 Settings Module
-
-## Purpose
-
-Control business rules from P1.1.
-
-## Backend dependencies
-
-Uses settings singleton.
-
-## Pages
-
-* Settings Overview
-* Business Rules sections
-
-## Settings sections
-
-### 1. Night Hours
-
-* start time
-* end time
-* COD restriction window explanation
-* timezone shown explicitly as Asia/Kathmandu
-
-### 2. Service Areas
-
-* Kathmandu
-* Lalitpur
-* Bhaktapur
-* add/remove areas if backend allows
-
-### 3. Delivery Fee
-
-* flat fee
-
-### 4. Legal Age
-
-* legalAgeMin
-
-## UX requirements
-
-* no silent save
-* change review summary
-* confirmation for sensitive settings
-* audit metadata shown if possible
-
----
-
-# 9.10 Admin Users / Team Management
-
-## Purpose
-
-Even if backend support is limited initially, the Phase 2 spec should reserve this as a proper module direction.
-
-## If current backend does not yet support full CRUD
-
-UI can initially provide:
-
-* current admin profile
-* role visibility
-* team/role overview placeholder
-
-## Full future requirements
-
-* list admins/employees
-* invite/create
-* deactivate
-* role management
-* audit visibility
-
-Do not fake unsupported functionality. If not available yet, mark as upcoming.
-
----
-
-## 10. Shared UI Components Needed
-
-### Tables
-
-* sortable table
-* filterable table
-* row actions menu
-* selectable rows where appropriate
-* sticky headers on large tables
-
-### Forms
-
-* reusable field controls
-* validation state handling
-* dirty-state detection
-* sectioned forms
-
-### Status UI
-
-* badges for statuses
-* payment status chips
-* KYC status chips
-* stock alert indicators
-
-### Feedback UI
-
-* toasts
-* banners
-* empty states
-* skeletons
-* destructive confirmations
-
-### Media UI
-
-* image upload zone
-* gallery grid
-* signed-image preview modal
-
----
-
-## 11. Engineering Requirements
-
-### 11.1 API layer
-
-Create typed API clients by feature.
-Do not scatter raw fetch calls throughout components.
-
-### 11.2 Query strategy
-
-Use TanStack Query properly:
-
-* feature-scoped query keys
-* invalidation after mutation
-* optimistic updates only where safe
-* no excessive refetch storms
-
-### 11.3 Form strategy
-
-Use React Hook Form + Zod.
-
-### 11.4 State strategy
-
-Keep server state and UI state separate.
-
-Use:
-
-* TanStack Query for server state
-* local component state or small store for UI state
-
-### 11.5 Permissions architecture
-
-Create a central permission mapping layer.
-Do not hardcode role checks in random buttons.
-
-### 11.6 Error mapping
-
-Map backend error codes to human-friendly admin messages.
-
-### 11.7 Accessibility
-
-Even internal tools should be reasonably accessible:
-
-* keyboard focus states
-* proper labels
-* modal focus trapping
-* sufficient color contrast
-
-### 11.8 Responsiveness
-
-Primary target is desktop, but layout should still degrade sensibly for smaller laptop widths.
-
-### 11.9 Performance
-
-* table virtualization if needed later
-* avoid giant page payloads
-* paginated lists
-* lazy-load heavier views where useful
-
----
-
-## 12. Page-by-Page Completion Standard
-
-A management page is only considered complete when it has:
-
-1. list view
-2. filters/sort/pagination
-3. detail view or edit form
-4. create/edit flow where applicable
-5. loading/empty/error states
-6. success/failure feedback
-7. role-aware action controls
-8. polished UX, not bare CRUD
-
----
-
-## 13. Phase 2 Delivery Plan
-
-# Phase 2A — Foundation + Design System + Auth
-
-Build:
-
-* admin app shell
-* theme system
-* auth flow
-* protected routes
-* layout system
-* core UI components
-
-# Phase 2B — Dashboard + Settings + KYC
-
-Build:
-
-* dashboard
-* settings page
-* KYC queue + review detail
-
-Reason: this unlocks operational trust and verification workflow first.
-
-# Phase 2C — Catalog + Uploads + Inventory
-
-Build:
-
-* categories
-* brands
-* products
-* variants
-* Cloudinary image flows
-* inventory adjustments and movement history
-
-# Phase 2D — Orders + Payments
-
-Build:
-
-* orders list/detail
-* status transitions
-* assignment
-* payment transaction views
-
-# Phase 2E — Promotions + Polish + Role Tightening
-
-Build:
-
-* promotions module
-* role-based refinements
-* saved filters / quality upgrades
-* final QA polish
-
----
-
-## 14. QA Expectations for Phase 2
-
-The admin panel is complete only when the team can do these fully through UI:
-
-* log in as admin role
-* create category, brand, product, variant
-* upload product images
-* adjust inventory
-* review and approve/reject KYC
-* create and validate promos
-* view and operate orders
-* inspect payment transactions
-* change settings safely
-
-No direct database editing should be required for normal operations.
-
----
-
-## 15. Non-Negotiables
-
-* no generic admin template feel
-* no rushed CRUD-only pages
-* no missing loading/empty/error states
-* no hardcoded fake data once the API exists
-* no UI actions that bypass backend rules
-* no visual mess or excessive gradients
-* no sloppy information density
-* no breaking away from Phase 1 backend contracts
-
----
-
-## 16. Definition of Success
-
-Phase 2 succeeds when BuzzBar has an admin panel that feels like a real internal product:
-
-* elegant enough to trust
-* fast enough to operate all day
-* deep enough to manage the business properly
-* strict enough to respect backend rules
-* polished enough to support launch operations
-
-This admin panel should be the real operational backbone of BuzzBar, not a temporary internal tool.
+## Final Definition of Done
+
+Phase 2 is complete in the implemented system because:
+
+- authentication works
+- dashboard is operational
+- KYC review works
+- catalog is operational
+- inventory is operational
+- orders are operational
+- payments are inspectable and connected to orders
+- promotions are manageable
+- settings are controlled by capability
+- capability boundaries are enforced
+- saved filters and QoL workflows are in place
+- admin contracts are documented
+- backend and admin validation command sets pass
+
+Final status:
+
+- `Phase 2 — Admin Control Panel`
+- `STATUS: COMPLETE`

@@ -38,7 +38,6 @@ export function ordersRouter() {
 
       if (!result.ok) {
         if (result.errorCode === 'CART_EMPTY') throw new ApiError(409, 'Cart is empty', { errorCode: 'CART_EMPTY' });
-        if (result.errorCode === 'KYC_REJECTED') throw new ApiError(403, 'KYC rejected', { errorCode: 'KYC_REJECTED' });
         if (result.errorCode === 'SERVICE_AREA_NOT_SUPPORTED') throw new ApiError(409, 'Service area not supported', { errorCode: 'SERVICE_AREA_NOT_SUPPORTED' });
         if (result.errorCode === 'NIGHT_HOURS_COD_REJECTED') throw new ApiError(409, 'COD not allowed in night hours', { errorCode: 'NIGHT_HOURS_COD_REJECTED' });
         if (result.errorCode === 'OUT_OF_STOCK') throw new ApiError(409, 'Out of stock', { errorCode: 'OUT_OF_STOCK', details: (result as any).details });
@@ -81,4 +80,3 @@ export function ordersRouter() {
 
   return router;
 }
-

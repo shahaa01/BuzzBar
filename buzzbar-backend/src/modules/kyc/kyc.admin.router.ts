@@ -7,7 +7,7 @@ import { AdminAuditLogModel } from '../admin/admin.models.js';
 import { KycAttemptModel } from './kyc.models.js';
 import { UserModel } from '../user/user.models.js';
 import { CloudinaryNotConfiguredError, getSignedPrivateDownloadUrl } from '../uploads/cloudinary.service.js';
-import { cancelOrdersForKycRejected } from '../orders/orders.service.js';
+import { clearOpenOrderAgeVerificationFlags, markOpenOrdersForRejectedKyc } from '../orders/orders.service.js';
 
 const REVIEW_ROLES = ['superadmin', 'admin', 'employee'] as const;
 
@@ -207,6 +207,7 @@ export function kycAdminRouter() {
       user.kycRejectedAt = undefined;
       user.kycRejectionReason = undefined;
       await user.save();
+      await clearOpenOrderAgeVerificationFlags({ userId: user._id.toString(), actorAdminId: req.admin!.id });
 
       await AdminAuditLogModel.create({
         adminId: req.admin!.id,
@@ -219,6 +220,60 @@ export function kycAdminRouter() {
       });
 
       res.status(200).json({ success: true, data: { ok: true, userId: user._id.toString(), attemptId: attempt._id.toString() } });
+    })
+  );
+
+  router.post(
+    '/kyc/:userId/verify-manually',
+    authenticateAdmin,
+    requireAdminRole([...REVIEW_ROLES]),
+    asyncHandler(async (req, res) => {
+      const params = z.object({ userId: z.string().min(1) }).parse(req.params);
+      const body = z.object({ note: z.string().trim().min(1).max(500) }).parse(req.body ?? {});
+
+      const user = await UserModel.findById(params.userId);
+      if (!user) throw new ApiError(404, 'User not found', { errorCode: 'NOT_FOUND' });
+      if (user.kycStatus === 'verified') {
+        throw new ApiError(409, 'User already verified', { errorCode: 'KYC_ALREADY_VERIFIED' });
+      }
+
+      const attemptId = user.kycLastAttemptId?.toString?.();
+      const attempt = attemptId ? await KycAttemptModel.findById(attemptId) : null;
+      const before = { kycStatus: user.kycStatus, kycVerifiedAt: user.kycVerifiedAt, kycRejectedAt: user.kycRejectedAt, kycRejectionReason: user.kycRejectionReason };
+
+      if (attempt && attempt.userId.toString() === user._id.toString() && attempt.status === 'pending') {
+        attempt.status = 'verified';
+        attempt.reviewedAt = new Date();
+        attempt.reviewedByAdminId = req.admin!.id as any;
+        attempt.reviewDecision = 'manual_verified';
+        attempt.reviewReason = body.note;
+        await attempt.save();
+      }
+
+      user.kycStatus = 'verified';
+      user.kycVerifiedAt = new Date();
+      user.kycRejectedAt = undefined;
+      user.kycRejectionReason = undefined;
+      await user.save();
+      await clearOpenOrderAgeVerificationFlags({ userId: user._id.toString(), actorAdminId: req.admin!.id, note: body.note });
+
+      await AdminAuditLogModel.create({
+        adminId: req.admin!.id,
+        action: 'kyc.verify_manual',
+        entityType: 'user',
+        entityId: user._id.toString(),
+        before,
+        after: { kycStatus: user.kycStatus, kycVerifiedAt: user.kycVerifiedAt },
+        meta: {
+          ip: req.ip,
+          userAgent: req.header('user-agent'),
+          requestId: req.requestId,
+          attemptId: attempt?._id?.toString?.(),
+          note: body.note
+        }
+      });
+
+      res.status(200).json({ success: true, data: { ok: true, userId: user._id.toString(), attemptId: attempt?._id?.toString?.() } });
     })
   );
 
@@ -258,8 +313,7 @@ export function kycAdminRouter() {
       user.kycRejectedAt = new Date();
       user.kycRejectionReason = body.reason;
       await user.save();
-
-      await cancelOrdersForKycRejected({ userId: user._id.toString(), reason: `kyc_rejected:${body.reason}` });
+      await markOpenOrdersForRejectedKyc({ userId: user._id.toString(), reason: `kyc_rejected:${body.reason}` });
 
       await AdminAuditLogModel.create({
         adminId: req.admin!.id,

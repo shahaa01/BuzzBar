@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../../common/utils/async_handler.js';
 import { ApiError } from '../../common/middleware/error_handler.js';
 import { authenticateAdmin, requireAdminRole } from '../admin/admin.middleware.js';
-import { adminAssignOrder, adminListOrders, adminTransitionOrder, adminUnassignOrder, adminUpdateOrderStatus, cancelOrderAndReleaseStock, getAdminOrderDetail, listOrderAssignees } from './orders.service.js';
+import { adminAssignOrder, adminListOrders, adminMarkAgeVerificationFailed, adminTransitionOrder, adminUnassignOrder, adminUpdateOrderStatus, cancelOrderAndReleaseStock, getAdminOrderDetail, listOrderAssignees } from './orders.service.js';
 import type { OrderStatus } from './orders.models.js';
 
 const ORDER_ROLES = ['superadmin', 'admin', 'employee'] as const;
@@ -98,6 +98,7 @@ export function ordersAdminRouter() {
         if (result.errorCode === 'ORDER_TRANSITION_INVALID') {
           throw new ApiError(409, 'Invalid status transition', { errorCode: 'ORDER_TRANSITION_INVALID', details: result.details });
         }
+        if (result.errorCode === 'KYC_REQUIRED') throw new ApiError(409, 'KYC required', { errorCode: 'KYC_REQUIRED' });
         if (result.errorCode === 'KYC_REVIEW_REQUIRED') throw new ApiError(409, 'KYC review required', { errorCode: 'KYC_REVIEW_REQUIRED' });
         if (result.errorCode === 'PAYMENT_NOT_PAID') throw new ApiError(409, 'Payment not paid', { errorCode: 'PAYMENT_NOT_PAID' });
         if (result.errorCode === 'ORDER_ALREADY_DELIVERED') {
@@ -126,6 +127,7 @@ export function ordersAdminRouter() {
         if (result.errorCode === 'ORDER_TRANSITION_INVALID') {
           throw new ApiError(409, 'Invalid status transition', { errorCode: 'INVALID_STATUS_TRANSITION', details: result.details });
         }
+        if (result.errorCode === 'KYC_REQUIRED') throw new ApiError(409, 'KYC required', { errorCode: 'KYC_REQUIRED' });
         if (result.errorCode === 'KYC_REVIEW_REQUIRED') throw new ApiError(409, 'KYC review required', { errorCode: 'KYC_REVIEW_REQUIRED' });
         if (result.errorCode === 'PAYMENT_NOT_PAID') throw new ApiError(409, 'Payment not paid', { errorCode: 'PAYMENT_NOT_PAID' });
         if (result.errorCode === 'ORDER_ALREADY_DELIVERED') {
@@ -169,6 +171,28 @@ export function ordersAdminRouter() {
         throw new ApiError(400, 'Unassign failed', { errorCode: 'ORDER_UNASSIGN_FAILED' });
       }
       res.status(200).json({ success: true, data: { ok: true } });
+    })
+  );
+
+  router.post(
+    '/orders/:id/age-verification-failed',
+    authenticateAdmin,
+    requireAdminRole([...ORDER_ROLES]),
+    asyncHandler(async (req, res) => {
+      const params = z.object({ id: z.string().min(1) }).parse(req.params);
+      const body = z.object({ note: z.string().min(1).max(500).optional() }).parse(req.body ?? {});
+
+      const result = await adminMarkAgeVerificationFailed({ orderId: params.id, adminId: req.admin!.id, note: body.note });
+      if (!result.ok) {
+        if (result.errorCode === 'NOT_FOUND') throw new ApiError(404, 'Order not found', { errorCode: 'NOT_FOUND' });
+        if (result.errorCode === 'AGE_VERIFICATION_ACTION_NOT_ALLOWED') {
+          throw new ApiError(409, 'Age verification action not allowed', { errorCode: 'AGE_VERIFICATION_ACTION_NOT_ALLOWED', details: (result as any).details });
+        }
+        if (result.errorCode === 'ORDER_TERMINAL') throw new ApiError(409, 'Order is terminal', { errorCode: 'ORDER_TERMINAL' });
+        throw new ApiError(400, 'Age verification failure handling failed', { errorCode: 'AGE_VERIFICATION_FAILED' });
+      }
+
+      res.status(200).json({ success: true, data: { ok: true, status: result.status, userStatusChanged: result.userStatusChanged } });
     })
   );
 

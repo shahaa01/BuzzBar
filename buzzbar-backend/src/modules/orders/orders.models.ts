@@ -14,6 +14,7 @@ export type PaymentMethod = 'COD' | 'WALLET';
 export type PaymentStatus = 'UNPAID' | 'PENDING' | 'PAID' | 'FAILED';
 
 export type KycGateStatus = 'PASS' | 'REVIEW_REQUIRED' | 'FAIL';
+export type OrderProgressBlockedReason = 'KYC_REQUIRED' | 'AGE_VERIFICATION_FAILED';
 
 const addressSnapshotSchema = new Schema(
   {
@@ -88,6 +89,11 @@ const orderSchema = new Schema(
 
     kycGateStatus: { type: String, required: true, enum: ['PASS', 'REVIEW_REQUIRED', 'FAIL'] satisfies KycGateStatus[], index: true },
     kycStatusSnapshot: { type: String, required: true, enum: ['not_started', 'pending', 'verified', 'rejected'] },
+    deliveryAgeCheckRequired: { type: Boolean, required: true, default: false },
+    progressBlockedReason: { type: String, enum: ['KYC_REQUIRED', 'AGE_VERIFICATION_FAILED'] satisfies OrderProgressBlockedReason[] },
+    ageVerificationNote: { type: String },
+    ageVerificationUpdatedAt: { type: Date },
+    ageVerificationUpdatedByAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
 
     addressSnapshot: { type: addressSnapshotSchema, required: true },
     items: { type: [orderItemSchema], required: true, default: () => [] },

@@ -75,6 +75,23 @@ describe('P1.4 KYC', () => {
     });
     expect(underage.autoDecision).toBe('needs_review');
     expect(underage.autoDecisionReason).toContain('underage');
+
+    const passportMonthName = decideKyc({
+      ...base,
+      client: { dobRaw: '20 JUN 1978', confidence: 0.95 },
+      server: { ocrText: 'DATE OF BIRTH 1978 JUN 20', confidence: 0.95 }
+    });
+    expect(passportMonthName.autoDecision).toBe('auto_verified');
+    expect(passportMonthName.clientParsed.dobAD?.toISOString()).toBe('1978-06-20T00:00:00.000Z');
+    expect(passportMonthName.serverParsed.dobAD?.toISOString()).toBe('1978-06-20T00:00:00.000Z');
+
+    const mixedScript = decideKyc({
+      ...base,
+      client: { dobRaw: 'DOB: २० JUN 1978', confidence: 0.95 },
+      server: { ocrText: 'DOB 20 JUN 1978', confidence: 0.95 }
+    });
+    expect(mixedScript.autoDecision).toBe('auto_verified');
+    expect(mixedScript.clientParsed.dobAD?.toISOString()).toBe('1978-06-20T00:00:00.000Z');
   });
 
   it('KYC submit: AND gate failure -> pending; status endpoint returns non-sensitive summary', async () => {
@@ -95,6 +112,10 @@ describe('P1.4 KYC', () => {
     expect(submit.body.data.kycStatus).toBe('pending');
     expect(submit.body.data.autoDecision).toBe('needs_review');
     expect(submit.body.data.attemptId).toBeTruthy();
+    expect(submit.body.data.attemptSummary.client.dobRaw).toBe('2000-08-01');
+    expect(submit.body.data.attemptSummary.server.dobRaw).toBeTruthy();
+    expect(submit.body.data.attemptSummary.interpretation.reviewRequired).toBe(true);
+    expect(typeof submit.body.data.attemptSummary.interpretation.withinTolerance).toBe('boolean');
 
     const status = await request(app)
       .get('/api/v1/kyc/status')
@@ -105,6 +126,8 @@ describe('P1.4 KYC', () => {
     expect(status.body.data.submittedAt).toBeTruthy();
     expect(status.body.data).not.toHaveProperty('idFront');
     expect(status.body.data).not.toHaveProperty('clientOcrText');
+    expect(status.body.data.attemptSummary.server.ocrText).toBeTruthy();
+    expect(status.body.data.attemptSummary.interpretation.reviewRequiredReason).toBeTruthy();
   });
 
   it('KYC submit: AND gate success -> auto verified', async () => {
@@ -123,6 +146,8 @@ describe('P1.4 KYC', () => {
     expect(submit.status).toBe(201);
     expect(submit.body.data.kycStatus).toBe('verified');
     expect(submit.body.data.autoDecision).toBe('auto_verified');
+    expect(submit.body.data.attemptSummary.interpretation.ageValid).toBe(true);
+    expect(submit.body.data.attemptSummary.interpretation.reviewRequired).toBe(false);
   });
 
   it('Admin queue + approve/reject work', async () => {
@@ -195,4 +220,3 @@ describe('P1.4 KYC', () => {
     expect(statusB.body.data.rejectionReason).toBe('Blurry ID photo');
   });
 });
-

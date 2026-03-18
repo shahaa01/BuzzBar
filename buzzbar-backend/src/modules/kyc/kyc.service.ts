@@ -8,6 +8,7 @@ import { decideKyc } from './kyc.decision.js';
 import { getKycOcrProvider } from './kyc.ocr.js';
 import { KycAttemptModel } from './kyc.models.js';
 import { UserModel } from '../user/user.models.js';
+import { clearOpenOrderAgeVerificationFlags } from '../orders/orders.service.js';
 
 export const MAX_KYC_FILE_SIZE_BYTES = 7 * 1024 * 1024;
 export const KYC_ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
@@ -163,6 +164,9 @@ export async function submitKycAttempt(opts: {
   }
 
   await user.save();
+  if (status === 'verified') {
+    await clearOpenOrderAgeVerificationFlags({ userId: user._id.toString(), note: 'auto_verified_kyc' });
+  }
 
   // Re-submit behavior: always create a new attempt and supersede the previous pending attempt (if any).
   if (priorPendingAttemptId) {
@@ -176,6 +180,7 @@ export async function submitKycAttempt(opts: {
     ok: true as const,
     attemptId: attempt._id.toString(),
     kycStatus: user.kycStatus,
-    autoDecision: decision.autoDecision
+    autoDecision: decision.autoDecision,
+    attempt
   };
 }
